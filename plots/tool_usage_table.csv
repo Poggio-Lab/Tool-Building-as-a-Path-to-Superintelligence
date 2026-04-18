@@ -1,0 +1,15 @@
+model_class,model,g,p,no_tool_rate,no_tool_n,single_tool_rate,single_tool_n,multi_tool_rate,multi_tool_n
+small,Qwen3-4B-Thinking,63,12,,0,0.6000,10,0.8000,10
+small,Qwen3-4B-Thinking,127,12,,0,0.0000,10,0.3000,10
+small,Qwen3-4B-Instruct,63,12,,0,0.1000,10,0.2000,10
+small,Qwen3-4B-Instruct,127,12,,0,0.0000,10,0.0000,10
+small,Qwen3-30B-A3B-Thinking,63,12,,0,0.7000,10,0.7000,10
+small,Qwen3-30B-A3B-Thinking,127,12,,0,0.5000,10,0.9000,10
+small,Qwen3-30B-A3B-Instruct,63,12,,0,0.0000,10,0.0000,10
+small,Qwen3-30B-A3B-Instruct,127,12,,0,0.0000,10,0.0000,10
+frontier,ChatGPT-5.2-Thinking,63,12,0.5000,,,,1.0000,
+frontier,ChatGPT-5.2-Thinking,127,12,0.0000,,,,0.9000,
+frontier,Opus,63,12,0.1000,,,,1.0000,
+frontier,Opus,127,12,0.1000,,,,1.0000,
+frontier,Gemini,63,12,0.0000,,,,0.2000,
+frontier,Gemini,127,12,0.0000,,,,0.3000,

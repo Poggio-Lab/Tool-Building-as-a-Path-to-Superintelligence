@@ -165,13 +165,13 @@ PRESETS = {
         "samples": 32,
         "description": "Full dense grid for estimator evaluation (includes p=32 for LLM comparison)"
     },
-    # "llm": {
-    #     "p_values": [12],                    # Fixed p=32 for LLM evaluation
-    #     "g_values": [0, 1, 3, 7, 15, 31],  # 7 values: exponential sampling 2^n - 1
-    #     "trials": 500,
-    #     "samples": 32,
-    #     "description": "Fixed p=32, exponential g values for LLM evaluation"
-    # },
+    "llm": {
+        "p_values": [12],                    # Fixed p for LLM evaluation
+        "g_values": [0, 1, 3, 7, 15, 31],   # Exponential g sampling
+        "trials": 500,
+        "samples": 32,
+        "description": "Fixed p, exponential g values for LLM evaluation",
+    },
     "llm_large": {
         "p_values": [12],                # 2 values
         "g_values": [63, 127],              # 3 values
@@ -243,59 +243,50 @@ def generate_single_dataset(output_file, adversarial, trials=100, N=64, seed=0,
     return records
 
 
+PRESETS_ALL = ["full", "llm", "simulation", "llm_large"]
+
+
 def generate_all_datasets(seed=0, output_dir=STORAGE_DIR):
-    """Generate all 4 dataset files: full/llm × diagnostic/adversarial.
-    
-    Creates:
-        - experiments_full_diagnostic.json
-        - experiments_full_adversarial.json
-        - experiments_llm_diagnostic.json
-        - experiments_llm_adversarial.json
-    """
+    """Generate one adversarial dataset per preset in PRESETS_ALL."""
     output_dir = Path(output_dir)
     if not output_dir.is_absolute():
         output_dir = REPO_ROOT / output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     files_created = []
-    
-    for preset_name in ["full", "llm", "simulation"]:
+
+    for preset_name in PRESETS_ALL:
         cfg = PRESETS[preset_name]
-        
-        for adversarial in [False, True]:
-            mode = "adversarial" if adversarial else "diagnostic"
-            filename = output_dir / f"experiments_{preset_name}_{mode}.json"
-            
-            print("=" * 60)
-            print(f"Generating: {filename.name}")
-            print(f"  Preset: {preset_name} ({cfg['description']})")
-            print("=" * 60)
-            
-            generate_single_dataset(
-                str(filename),
-                adversarial=adversarial,
-                trials=cfg["trials"],
-                N=cfg["samples"],
-                seed=seed,
-                p_values=cfg["p_values"],
-                g_values=cfg["g_values"]
-            )
-            files_created.append(filename)
-            print()
-    
-    # Print summary
+        filename = output_dir / f"experiments_{preset_name}_adversarial.json"
+
+        print("=" * 60)
+        print(f"Generating: {filename.name}")
+        print(f"  Preset: {preset_name} ({cfg['description']})")
+        print("=" * 60)
+
+        generate_single_dataset(
+            str(filename),
+            adversarial=True,
+            trials=cfg["trials"],
+            N=cfg["samples"],
+            seed=seed,
+            p_values=cfg["p_values"],
+            g_values=cfg["g_values"],
+        )
+        files_created.append(filename)
+        print()
+
     print("=" * 60)
-    print("SUMMARY - All 4 datasets generated:")
+    print(f"SUMMARY - {len(files_created)} adversarial dataset(s) generated:")
     print("=" * 60)
-    
-    for preset_name in ["full", "llm", "simulation"]:
+
+    for preset_name in PRESETS_ALL:
         cfg = PRESETS[preset_name]
-        count_per_mode = len(cfg["p_values"]) * len(cfg["g_values"]) * cfg["trials"]
+        count = len(cfg["p_values"]) * len(cfg["g_values"]) * cfg["trials"]
         print(f"\n{preset_name.upper()} ({cfg['description']}):")
         print(f"  p: {cfg['p_values']}")
         print(f"  g: {cfg['g_values']}")
         print(f"  {cfg['trials']} trials × {cfg['samples']} samples each")
-        print(f"  experiments_{preset_name}_diagnostic.json  ({count_per_mode:,} experiments)")
-        print(f"  experiments_{preset_name}_adversarial.json ({count_per_mode:,} experiments)")
+        print(f"  experiments_{preset_name}_adversarial.json ({count:,} experiments)")
     
     full_cfg = PRESETS["full"]
     llm_cfg = PRESETS["llm"]

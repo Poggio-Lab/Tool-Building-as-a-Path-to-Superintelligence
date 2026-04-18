@@ -1,0 +1,5 @@
+model,u (k=u*g),v (k=v),aic_proportional,aic_constant,delta_AIC (const - prop),evidence_ratio exp(delta/2),better_model
+Qwen3-30B-A3B-Instruct-2507,0.4700,0.0,8227.42,8486.45,259.03,1.77e+56,proportional
+Qwen3-30B-A3B-Thinking-2507,0.4700,0.0,22716.88,22757.63,40.74,7.04e+08,proportional
+Qwen3-4B-Instruct-2507,0.5000,0.0,26767.50,28547.48,1779.98,inf,proportional
+Qwen3-4B-Thinking-2507,0.8300,0.0,16045.90,19790.82,3744.93,inf,proportional

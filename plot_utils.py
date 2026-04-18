@@ -17,9 +17,9 @@ from matplotlib.colors import to_hex
 # ---------- paths ----------
 REPO_ROOT = Path(__file__).resolve().parent
 PLOTS_DIR = REPO_ROOT / "plots"
-LLM_RESULTS_DIR = REPO_ROOT / "llm_results"
+LLM_RESULTS_DIR = REPO_ROOT / "all_results"
 STORAGE_DIR = REPO_ROOT / "storage"
-LLM_PROMPTS_FILE = REPO_ROOT / "llm_g_prompts2.xlsx"
+LLM_PROMPTS_FILE = REPO_ROOT / "all_results" / "llm_g_prompts_cleaned.xlsx"
 
 
 def resolve_output_path(path_str: str | Path, base_dir: Path) -> Path:
@@ -157,6 +157,39 @@ def recompute_is_correct_with_boxed_fallback(record: dict) -> bool:
     return False
 
 
+def is_correct_after_first_tool(record: dict) -> bool:
+    """
+    Success rate cap: if only ONE tool use were permitted.
+    - If the model used no tools, fall back to the final response (same as full trajectory).
+    - Otherwise, check sandboxes[0].stdout for a correct \\boxed{...} answer.
+    """
+    sandboxes = record.get("sandboxes") or []
+    if not sandboxes:
+        return recompute_is_correct_with_boxed_fallback(record)
+
+    tgt = record.get("target", [])
+    if not tgt:
+        return False
+
+    n = record.get("n")
+    if n is None:
+        n = _extract_n_from_prompt(record.get("prompt", "") or "")
+    if n is None:
+        return False
+
+    try:
+        target_abs = sorted([int(i) + int(n) for i in tgt])
+    except Exception:
+        return False
+
+    sb0 = sandboxes[0] or {}
+    stdout = (sb0.get("stdout") or "") + "\n" + (sb0.get("stderr") or "")
+    for ans in parse_boxed_answer(stdout):
+        if sorted(ans) == target_abs:
+            return True
+    return False
+
+
 # ---------- LLM JSONL ----------
 def load_llm_results(
     llm_results_dir: str | Path = LLM_RESULTS_DIR,
@@ -169,6 +202,9 @@ def load_llm_results(
     out: dict[str, list[dict]] = {}
     for f in results_dir.glob("*.jsonl"):
         if filter_adversarial and "adversarial" not in f.name:
+            continue
+        # No-tools experimental runs are loaded separately; skip them here
+        if "notools" in f.name:
             continue
 
         records: list[dict] = []

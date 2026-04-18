@@ -8,7 +8,7 @@ Usage:
     uv run simulate.py
     
     # Run on specific files:
-    uv run simulate.py --input experiments_full_diagnostic.json --output results_full_diagnostic.json
+    uv run simulate.py --input experiments_full_diagnostic.json --output simulation_full_diagnostic.json
 """
 
 import json
@@ -21,6 +21,7 @@ from numba import njit
 
 REPO_ROOT = Path(__file__).resolve().parent
 STORAGE_DIR = REPO_ROOT / "storage"
+LLM_RESULTS_DIR = REPO_ROOT / "all_results"
 
 
 def resolve_path(path_str: str, base_dir: Path) -> Path:
@@ -509,27 +510,30 @@ def simulate_single_file(input_file, output_file):
     return results
 
 
-def simulate_all_full_datasets(input_dir=STORAGE_DIR, output_dir=STORAGE_DIR):
+def simulate_all_full_datasets(input_dir=STORAGE_DIR, output_dir=LLM_RESULTS_DIR):
     """Run estimators on all full datasets.
-    
+
     Expects:
         - experiments_full_diagnostic.json
         - experiments_full_adversarial.json
-        
-    Creates:
-        - results_full_diagnostic.json
-        - results_full_adversarial.json
+        - experiments_simulation_diagnostic.json
+        - experiments_simulation_adversarial.json
+
+    Creates (output names prefixed with 'simulation_'):
+        - simulation_full_diagnostic.json
+        - simulation_full_adversarial.json
+        - simulation_simulation_diagnostic.json
+        - simulation_simulation_adversarial.json
     """
     input_dir = resolve_path(str(input_dir), REPO_ROOT)
     output_dir = resolve_path(str(output_dir), REPO_ROOT)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
-    datasets = [
-        ("experiments_full_diagnostic.json", "results_full_diagnostic.json"),
-        ("experiments_full_adversarial.json", "results_full_adversarial.json"),
-        ("experiments_simulation_adversarial.json", "results_simulation_adversarial.json"),
-        ("experiments_simulation_diagnostic.json", "results_simulation_diagnostic.json"),
 
+    datasets = [
+        ("experiments_full_diagnostic.json",        "simulation_full_diagnostic.json"),
+        ("experiments_full_adversarial.json",       "simulation_full_adversarial.json"),
+        ("experiments_simulation_adversarial.json", "simulation_simulation_adversarial.json"),
+        ("experiments_simulation_diagnostic.json",  "simulation_simulation_diagnostic.json"),
     ]
     
     for input_name, output_name in datasets:
@@ -571,7 +575,7 @@ Examples:
   uv run simulate.py
   
   # Run on a specific file:
-  uv run simulate.py --input experiments_full_diagnostic.json --output results_full_diagnostic.json
+  uv run simulate.py --input experiments_full_diagnostic.json --output simulation_full_diagnostic.json
   
   # Specify input/output directories:
   uv run simulate.py --input-dir ./data --output-dir ./results
@@ -583,7 +587,7 @@ Examples:
                         help="Output results JSON file (single file mode)")
     parser.add_argument("--input-dir", type=str, default=str(STORAGE_DIR),
                         help="Directory containing experiment files (batch mode)")
-    parser.add_argument("--output-dir", type=str, default=str(STORAGE_DIR),
+    parser.add_argument("--output-dir", type=str, default=str(LLM_RESULTS_DIR),
                         help="Directory to save result files (batch mode)")
     parser.add_argument("--all", action="store_true",
                         help="Process all full datasets (default behavior)")
@@ -593,7 +597,7 @@ Examples:
     # Single file mode
     if args.input and args.output:
         input_path = resolve_path(args.input, STORAGE_DIR)
-        output_path = resolve_path(args.output, STORAGE_DIR)
+        output_path = resolve_path(args.output, LLM_RESULTS_DIR)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         simulate_single_file(str(input_path), str(output_path))
     else:

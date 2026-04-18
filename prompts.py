@@ -192,6 +192,131 @@ def build_prompt_compact(record: dict) -> str:
     return build_prompt(record, include_reasoning_instruction=False, no_think=True)
 
 
+TOOLS_INSTRUCTION = """
+**TOOL MODE — you MUST answer by writing Python code. No code = no credit.**
+
+Wrap your full solution in ONE ```python ... ``` fenced block. Do not answer
+in prose only. Code runs in a RestrictedPython sandbox (fresh subprocess, hard
+CPU/memory limits).
+
+**CRITICAL: The data is already loaded for you. DO NOT redefine it.**
+Two globals are already set inside the sandbox — do NOT copy the prose table
+into your code, do NOT assign to `RECORD = {...}`, do NOT rebuild `samples`:
+  * `RECORD` — a dict with the parsed experiment:
+      * `RECORD["n"]` (int) — selector-bit count (indices `0..n-1`)
+      * `RECORD["p"]` (int) — payload-bit count (indices `n..n+p-1`)
+      * `RECORD["g"]` (int) — number of known prefix monomials; the unknown
+        monomial contains selector bit `x_g`
+      * `RECORD["d_max"]` (int) — full degree; you must find `d_max - 1`
+        payload indices in `[n, n+p-1]`
+      * `RECORD["prefix"]` — list of lists of payload indices (offset 0..p-1;
+        add `n` to get absolute indices)
+      * `RECORD["samples"]` — list of dicts. Each sample has:
+          * `"x"` (str) — the raw hex string like `"0x5fc..."`
+          * `"x_int"` (int) — **already parsed to an integer**, use this directly
+          * `"bits"` (str) — `"010110…"`, length `n+p`, with `x_0` as the
+            leftmost char (bit `i` is `int(sample["bits"][i])`)
+          * `"y"` (int) — 0 or 1
+  * `PROMPT` — the full question text if you want to re-read it. Prefer
+    `RECORD`; don't parse `PROMPT`.
+
+**Technical limits:**
+* Python 3 syntax — f-strings fine. Time budget ~500 ms wall-clock.
+* No filesystem, network, subprocess, ctypes, eval/exec.
+* Allowed imports ONLY: `re`, `math`, `itertools`, `collections`, `string`,
+  `json`, `functools`, `operator`, `heapq`, `bisect`, `random`, `fractions`,
+  `decimal`, `statistics`.
+
+**Output — print ONE line as your final answer:**
+```
+answer = sorted(my_indices)     # absolute bit indices, in [n, n+p-1]
+print("\\\\boxed{" + str(answer) + "}")
+```
+
+**Skeleton to start from (copy-paste, then fill in the logic):**
+```
+from itertools import combinations
+n, p, g = RECORD["n"], RECORD["p"], RECORD["g"]
+d = RECORD["d_max"] - 1
+samples = [(int(s["x"], 16), s["y"]) for s in RECORD["samples"]]
+# ... your reasoning over `samples` and `RECORD["prefix"]` here ...
+answer = sorted(best_indices)
+print("\\\\boxed{" + str(answer) + "}")
+```
+"""
+
+TOOLS_REVISE_SUFFIX = """
+* **Iteration:** After your code runs you will see its stdout/stderr/error. You
+  may then either write another ```python ... ``` block to try again, OR give
+  your final answer in plain text as `\\boxed{[i1, i2, ...]}` with no code
+  block. Only respond with the boxed answer once you are confident; any turn
+  that contains a code block will be re-executed.
+"""
+
+
+def build_prompt_tools(record: dict, no_think: bool = False,
+                       revise: bool = False) -> tuple[str, str]:
+    """Return (question_text, llm_prompt).
+
+    question_text is what's exposed to the LLM's sandboxed code as the global
+    variable `PROMPT`. llm_prompt is what gets sent to the model — question +
+    tool-mode instructions (plus the revise suffix if enabled).
+    """
+    base = build_prompt(record, no_think=no_think)
+    instr = TOOLS_INSTRUCTION
+    if revise:
+        instr += TOOLS_REVISE_SUFFIX
+    return base, base + instr
+
+
+def _trim(s: str, limit: int = 4000) -> str:
+    if s is None:
+        return ""
+    return s if len(s) <= limit else s[:limit] + f"\n...[truncated {len(s) - limit} chars]"
+
+
+def format_sandbox_feedback(sb: dict, revise: bool) -> str:
+    """Render a sandbox result as a short user message for the next LLM turn."""
+    parts = ["Execution result:"]
+    if sb.get("error"):
+        parts.append(f"error: {sb['error']}")
+    if sb.get("stdout"):
+        parts.append(f"stdout:\n{_trim(sb['stdout'])}")
+    if sb.get("stderr"):
+        parts.append(f"stderr:\n{_trim(sb['stderr'])}")
+    parts.append(f"returncode={sb.get('returncode')}, "
+                 f"elapsed={sb.get('elapsed_ms', 0):.1f}ms")
+    if revise:
+        parts.append(
+            "\nRespond with either:\n"
+            "  (a) another ```python ... ``` block to iterate, or\n"
+            "  (b) your final answer in plain text as `\\boxed{[...]}` (no code)."
+        )
+    return "\n".join(parts)
+
+
+def strip_thinking(text: Optional[str]) -> str:
+    """Remove <think>/<thinking>/<thought> blocks so prior-turn history stays compact."""
+    if not text:
+        return ""
+    t = re.sub(r'<think(?:ing)?>.*?</think(?:ing)?>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    t = re.sub(r'<thought>.*?</thought>', '', t, flags=re.DOTALL | re.IGNORECASE)
+    return t.strip()
+
+
+def extract_code_from_response(response: Optional[str]) -> Optional[str]:
+    """Pull a Python code block from an LLM response (with or without a closing fence)."""
+    if not response:
+        return None
+    r = re.sub(r'<think(?:ing)?>.*?</think(?:ing)?>', '', response, flags=re.DOTALL | re.IGNORECASE)
+    r = re.sub(r'<thought>.*?</thought>', '', r, flags=re.DOTALL | re.IGNORECASE)
+    m = re.search(r'```(?:python|py)?\s*\n(.*?)```', r, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    m = re.search(r'```(?:python|py)?\s*\n(.*)$', r, re.DOTALL)
+    return m.group(1).strip() if m else None
+
+
 # ============================================================
 # Response Parsing
 # ============================================================
@@ -882,7 +1007,7 @@ Examples:
         
         save_g_prompts_csv(
             groups=groups,
-            output_file="llm_g_prompts.csv",
+            output_file="all_results/llm_g_prompts.csv",
             compact=args.compact,
             num_examples=10
         )
