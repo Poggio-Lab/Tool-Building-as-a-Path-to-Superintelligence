@@ -1007,7 +1007,7 @@ def plot_k_star_trajectories(
     results_without_tools: dict,
     out: str = "plot_k_star_trajectories.pdf",
 ):
-    """Per-depth k_star(g) with Jeffreys CI band; ReLU fit k* ≈ max(0, b*g + a)."""
+    """Per-depth k_star(g) with Jeffreys CI band, ReLU fit, and computed random-guess reference."""
     fig, (ax_nt, ax_t) = plt.subplots(1, 2, figsize=(8, 3.2), sharey=True)
 
     for ax, results, title in [
@@ -1015,6 +1015,7 @@ def plot_k_star_trajectories(
         (ax_t,  results_with_tools,    "With Tools"),
     ]:
         all_g: set[int] = set()
+        random_guess_unknown_counts: list[float] = []
         for model_name, info in sorted(results.items()):
             if ax is ax_nt and _is_4b_instruct_model(model_name):
                 continue
@@ -1030,6 +1031,8 @@ def plot_k_star_trajectories(
             ks_lo = np.array([traj_lo.get(int(g), traj[int(g)]) for g in gs], dtype=float)
             ks_hi = np.array([traj_hi.get(int(g), traj[int(g)]) for g in gs], dtype=float)
             all_g.update(int(g) for g in gs)
+            for g, k in (info.get("random_guess_k_boundary", {}) or {}).items():
+                random_guess_unknown_counts.append(float(int(g) - int(k)))
 
             fit_label: str
             if len(gs) >= 2:
@@ -1054,6 +1057,19 @@ def plot_k_star_trajectories(
             g_lo, g_hi = min(all_g), max(all_g)
             span = max(float(g_hi - g_lo), 1.0)
             ax.set_xlim(g_lo - 0.05 * span, g_hi + 0.05 * span)
+            if random_guess_unknown_counts:
+                chance_gap = float(np.median(random_guess_unknown_counts))
+                g_rng = np.linspace(float(g_lo), float(g_hi), max(100, int(round(g_hi - g_lo)) * 24))
+                k_rand = np.maximum(0.0, g_rng - chance_gap)
+                gap_label = f"{chance_gap:.0f}" if chance_gap.is_integer() else f"{chance_gap:.1f}"
+                ax.plot(
+                    g_rng,
+                    k_rand,
+                    color="k",
+                    linestyle="-",
+                    linewidth=1.0,
+                    label=rf"random-guess boundary ($\max(0, g-{gap_label})$)",
+                )
 
         ax.set_xlabel(r"Depth $g$")
         ax.set_title(title)

@@ -8,7 +8,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=196G
 #SBATCH --gres=gpu:a100:2
-#SBATCH --partition=ou_bcs_normal
+#SBATCH --partition=[partition]
 #SBATCH --array=0-1
 
 # Array search: 4 models × 3 tool modes = 12 tasks.

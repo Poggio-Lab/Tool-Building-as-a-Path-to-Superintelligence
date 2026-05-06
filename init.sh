@@ -8,7 +8,7 @@
 #SBATCH --cpus-per-task=34
 #SBATCH --mem=256G
 #SBATCH --gres=gpu:a100:1
-#SBATCH --partition=pi_tpoggio
+#SBATCH --partition=[partition]
 
 set -euo pipefail
 

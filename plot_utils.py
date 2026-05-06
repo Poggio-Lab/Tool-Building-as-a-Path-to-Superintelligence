@@ -761,15 +761,21 @@ def fit_llm_to_estimator_d(
         d = d_max - 1
         rand = 1.0 / nCr(p_val, d)
 
-        # Precompute gamma_D(g, k) grid
+        # Precompute gamma_D(g, k) grid and Monte Carlo SE over experiment instances.
         grid: dict[tuple[int, int], float] = {}
+        grid_se: dict[tuple[int, int], float] = {}
         for g in g_vals:
             ids = idx_by_g.get(g, [])[:50]
             if not ids:
                 continue
             for k in range(g + 1):
-                vals = [gamma_D_with_k(experiments[i], k) for i in ids]
-                grid[(g, k)] = float(np.mean(vals)) if vals else rand
+                vals = np.array([gamma_D_with_k(experiments[i], k) for i in ids], dtype=float)
+                grid[(g, k)] = float(np.mean(vals)) if len(vals) else rand
+                grid_se[(g, k)] = (
+                    float(np.std(vals, ddof=1) / math.sqrt(len(vals)))
+                    if len(vals) > 1
+                    else 0.0
+                )
 
         # Per-depth k_star(g) with Jeffreys CI on observed gamma propagated to k
         k_star: dict[int, int] = {}
@@ -803,6 +809,19 @@ def fit_llm_to_estimator_d(
 
         if not k_star:
             continue
+
+        random_guess_k_boundary: dict[int, int] = {}
+        for g in g_vals:
+            if (g, 0) not in grid:
+                continue
+            chance_ks: list[int] = []
+            for k in range(g + 1):
+                pred = grid.get((g, k), rand)
+                se = grid_se.get((g, k), 0.0)
+                if abs(pred - rand) <= 1.96 * se:
+                    chance_ks.append(k)
+            if chance_ks:
+                random_guess_k_boundary[g] = max(chance_ks)
 
         # Trajectory models: predict gamma at each depth from k(g), score by binomial loglik
         def loglik_for_k_func(k_func: Callable[[int], int]) -> float:
@@ -859,6 +878,7 @@ def fit_llm_to_estimator_d(
             "k_star_lo_trajectory": k_star_lo,
             "k_star_hi_trajectory": k_star_hi,
             "k_star_at_g_max": k_star_at_max,
+            "random_guess_k_boundary": random_guess_k_boundary,
             "g_max": g_max,
         }
 
