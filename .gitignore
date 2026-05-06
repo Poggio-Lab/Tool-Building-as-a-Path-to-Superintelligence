@@ -1,0 +1,7 @@
+*.log
+*.err
+*.out
+.venv
+.claude
+all_results
+exp_logs

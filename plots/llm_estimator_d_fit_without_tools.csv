@@ -1,0 +1,5 @@
+tool_condition,model,g_max,k_star_at_g_max,k_star_trajectory,k_star_lo_trajectory,k_star_hi_trajectory,f (k=f*g),"c (k=min(g,c))",aic_proportional,aic_capacity,delta_AIC (cap - prop),evidence_ratio exp(delta/2),better_model
+without_tools,Qwen3-30B-A3B-Instruct-2507,31,19,0:0;1:0;3:0;7:2;15:8;31:19,0:0;1:0;3:0;7:0;15:0;31:19,0:0;1:0;3:0;7:2;15:10;31:22,0.1000,0,15813.15,15814.19,1.04,1.69,inconclusive
+without_tools,Qwen3-30B-A3B-Thinking-2507,31,24,0:0;1:0;3:0;7:4;15:12;31:24,0:0;1:0;3:0;7:3;15:11;31:19,0:0;1:0;3:1;7:4;15:12;31:26,0.4400,0,6519.72,6682.06,162.34,1.79e+35,proportional
+without_tools,Qwen3-4B-Instruct-2507,31,19,0:0;1:0;3:0;7:2;15:0;31:19,0:0;1:0;3:0;7:0;15:0;31:19,0:0;1:0;3:0;7:3;15:9;31:27,0.0900,0,10477.01,10478.48,1.47,2.09,inconclusive
+without_tools,Qwen3-4B-Thinking-2507,31,25,0:0;1:0;3:0;7:0;15:9;31:25,0:0;1:0;3:0;7:0;15:0;31:19,0:0;1:0;3:0;7:2;15:10;31:27,0.0500,0,20760.90,20760.91,0.01,1,inconclusive

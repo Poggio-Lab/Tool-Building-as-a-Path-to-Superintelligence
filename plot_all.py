@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import gc
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -13,7 +15,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 import matplotlib.ticker as ticker
-
+import pandas as pd
 import scienceplots  # noqa: F401
 
 from plot_utils import (
@@ -22,11 +24,13 @@ from plot_utils import (
     short_model_name,
     aggregate_results,
     load_llm_results,
+    load_llm_notools_results,
     compute_llm_gamma_stats_by_g, compute_llm_gamma_by_g,
     get_min_gamma_for_llm, get_overall_gamma_for_llm,
     recompute_is_correct_with_boxed_fallback, parse_boxed_answer,
     is_correct_after_first_tool,
     _parse_target_cell, _clean_spreadsheet_response, _parse_last_3_numbers,
+    _extract_n_from_prompt,
     verify_and_reorder_llm_responses,
     save_cleaned_llm_prompts_file,
     jeffreys_interval,
@@ -40,6 +44,7 @@ from plot_utils import (
 
 plt.style.use(["science", "no-latex"])
 # Ensure math mode parser works correctly with no-latex
+_PLOT_LOCK = threading.Lock()
 
 # The "Vibrant 11" - High Saturation, Distinct, No Muddy Colors
 PALETTE_11 = [
@@ -148,6 +153,29 @@ def abbreviate_model_name(name: str) -> str:
     return s
 
 
+def _is_4b_instruct_model(model_name: str) -> bool:
+    s = model_name.lower()
+    return "4b" in s and "instruct" in s
+
+
+def _fit_k_star_relu_mse(gs: np.ndarray, ks: np.ndarray) -> tuple[float, float]:
+    """LS fit k ≈ max(0, b*g + a) with k nonnegative (ReLU on the affine predictor)."""
+    from scipy.optimize import minimize
+
+    gs = np.asarray(gs, dtype=float)
+    ks = np.asarray(ks, dtype=float)
+
+    def objective(theta: np.ndarray) -> float:
+        b, a = float(theta[0]), float(theta[1])
+        pred = np.maximum(0.0, b * gs + a)
+        d = ks - pred
+        return float(np.dot(d, d))
+
+    b0, a0 = map(float, np.polyfit(gs, ks, 1))
+    res = minimize(objective, x0=np.array([b0, a0], dtype=float), method="L-BFGS-B")
+    return float(res.x[0]), float(res.x[1])
+
+
 def _save(fig, out: str | Path, dpi: int = 300):
     outp = resolve_output_path(out, PLOTS_DIR)
     outp.parent.mkdir(parents=True, exist_ok=True)
@@ -194,13 +222,13 @@ def _set_log_xy(ax, xs, y_min, y_max):
 
 
 # -------- plot 1a/1b: gamma vs g for estimators --------
-def plot_gamma_vs_g_single(results: list[dict], p_fixed: int, title: str, out: str):
-    fig, ax = plt.subplots(figsize=(4, 3))
+def _draw_gamma_vs_g_on_ax(ax, results: list[dict], p_fixed: int, title: str,
+                           show_ylabel: bool = True, show_legend: bool = True):
+    """Draw the 4-estimator γ vs g line plot onto a provided axis."""
     filtered = [r for r in results if int(r["p"]) == int(p_fixed)]
     if not filtered:
         ax.set_title(title)
-        _save(fig, out)
-        return {}
+        return None, None, None
 
     d_max = int(filtered[0].get("d_max", 4))
     d = d_max - 1
@@ -235,36 +263,43 @@ def plot_gamma_vs_g_single(results: list[dict], p_fixed: int, title: str, out: s
             highs.append(max(hi, y_min_clip))
 
         c = COLORS.get_color(a)
-        line, = ax.plot(xs, means, marker="o", markersize=3, label=f"Estimator {a}", color=c)
+        ax.plot(xs, means, marker="o", markersize=3, label=f"Estimator {a}", color=c)
         ax.fill_between(xs, lows, highs, alpha=0.15, color=c)
         max_y = max(max_y, float(np.max(highs)))
 
-    # Use Black for Random line (Sharp contrast)
     ax.axhline(ref, color="k", linestyle="--", label="Random", linewidth=0.8)
-    ax.set_xlabel("")
-    ax.set_ylabel("Probability Correct γ")
+    ax.set_xlabel(r"Depth $g$")
+    if show_ylabel:
+        ax.set_ylabel(r"Probability Correct $\gamma$")
     ax.set_title(title)
     ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=7, loc="upper right", frameon=True)
+    if show_legend:
+        ax.legend(fontsize=7, loc="upper right", frameon=True)
     _set_log_xy(ax, xs, y_min_clip * 0.8, max_y * 2.0)
     _axis_break(ax)
-    _save(fig, out)
 
+    return filtered, xs, max_y
+
+
+def plot_gamma_vs_g_single(results: list[dict], p_fixed: int, title: str, out: str):
+    fig, ax = plt.subplots(figsize=(4, 3))
+    filtered, _, _ = _draw_gamma_vs_g_on_ax(ax, results, p_fixed, title)
+    _save(fig, out)
+    if not filtered:
+        return {}
     return aggregate_results(filtered, ["g"], with_std=False)
 
 
 def plot_gamma_vs_g(results_diag: list[dict], results_adv: list[dict], p_fixed: int = 12):
     agg_diag = plot_gamma_vs_g_single(
         results_diag, p_fixed,
-        f"Without Adversarial (p={p_fixed}, d_max=4)",
+        rf"Without Adversarial ($p={p_fixed}$, $d_{{\mathrm{{max}}}}=4$)",
         "plot1a_gamma_vs_g_diagnostic.pdf",
     )
     d_max = int(results_adv[0].get("d_max", 4)) if results_adv else 4
-    agg_adv = plot_gamma_vs_g_single(
-        results_adv, p_fixed,
-        f"Bayesian Estimator Gamma Scaling (p={p_fixed}, d={d_max})",
-        "plot1b_gamma_vs_g_adversarial.pdf",
-    )
+    # NOTE: 1b is rendered as part of the combined adversarial figure; only aggregate returned here.
+    filtered_adv = [r for r in results_adv if int(r["p"]) == int(p_fixed)]
+    agg_adv = aggregate_results(filtered_adv, ["g"], with_std=False) if filtered_adv else {}
     return agg_diag, agg_adv
 
 
@@ -292,8 +327,8 @@ def plot_heatmap_single(results: list[dict], estimator: str, title: str, out: st
     ax.set_xticklabels([g_vals[i] for i in range(0, len(g_vals), 2)])
     ax.set_yticks(range(len(p_vals)))
     ax.set_yticklabels(p_vals)
-    ax.set_xlabel("Prefix Length (g)")
-    ax.set_ylabel("Number of Inputs (p)")
+    ax.set_xlabel(r"Prefix Length ($g$)")
+    ax.set_ylabel(r"Number of Inputs ($p$)")
     ax.set_title(title)
     
     cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
@@ -314,8 +349,94 @@ def plot_heatmap_single(results: list[dict], estimator: str, title: str, out: st
     # The user said "y axis for all plots".
     # I will assume this applies to 1D plots (line/bar).
     cb.ax.yaxis.set_major_formatter(matplotlib.ticker.ScalarFormatter())
-    cb.set_label("log10(γ)")
+    cb.set_label(r"$\log_{10}(\gamma)$")
     _save(fig, out)
+
+
+def _compute_heatmap_matrices(results: list[dict]):
+    """Compute per-estimator γ matrices indexed by (p, g). Returns (matrices, global_min, global_max)."""
+    matrices = {}
+    agg = aggregate_results(results, ["g", "p"], with_std=False)
+    for e in "ABCD":
+        g_vals = sorted({int(k[0]) for k in agg})
+        p_vals = sorted({int(k[1]) for k in agg})
+        if not g_vals or not p_vals:
+            continue
+        mat = np.full((len(p_vals), len(g_vals)), np.nan, dtype=float)
+        g_i = {g: j for j, g in enumerate(g_vals)}
+        p_i = {p: i for i, p in enumerate(p_vals)}
+        for (g, p), v in agg.items():
+            mat[p_i[int(p)], g_i[int(g)]] = float(v[e])
+        matrices[e] = {"mat": mat, "g_vals": g_vals, "p_vals": p_vals}
+
+    if not matrices:
+        return {}, None, None
+
+    all_values = []
+    for e in "ABCD":
+        if e in matrices:
+            valid = matrices[e]["mat"][~np.isnan(matrices[e]["mat"])]
+            if len(valid) > 0:
+                all_values.extend(valid)
+    if not all_values:
+        return {}, None, None
+
+    global_min = np.log10(np.maximum(np.min(all_values), 1e-12))
+    global_max = np.log10(np.maximum(np.max(all_values), 1e-12))
+    return matrices, global_min, global_max
+
+
+def _draw_heatmaps_on_axes(axes_flat, matrices, global_min, global_max,
+                           label_fontsize=8, tick_fontsize=6, title_fontsize=None,
+                           n_xticks=4, p_tick_step=1, show_all_tick_labels=False):
+    """Render the 2x2 heatmap grid onto four provided axes. Returns the last image handle (for colorbar)."""
+    if title_fontsize is None:
+        title_fontsize = label_fontsize
+    im = None
+    for idx, e in enumerate("ABCD"):
+        ax = axes_flat[idx]
+        if e not in matrices:
+            ax.axis("off")
+            continue
+        data = matrices[e]
+        mat = data["mat"]
+        g_vals = data["g_vals"]
+        p_vals = data["p_vals"]
+        mat_log = np.log10(np.maximum(mat, 1e-12))
+        im = ax.imshow(mat_log, aspect="auto", origin="lower", cmap="viridis",
+                       vmin=global_min, vmax=global_max)
+        ax.set_box_aspect(1)
+
+        n_g = len(g_vals)
+        if n_xticks is None:
+            x_idxs = list(range(n_g))
+        elif n_g <= n_xticks:
+            x_idxs = list(range(n_g))
+        else:
+            x_idxs = [int(round(i * (n_g - 1) / (n_xticks - 1))) for i in range(n_xticks)]
+            x_idxs = sorted(set(x_idxs))
+        ax.set_xticks(x_idxs)
+        ax.set_xticklabels([g_vals[i] for i in x_idxs], fontsize=tick_fontsize)
+
+        y_idxs = list(range(0, len(p_vals), max(1, p_tick_step)))
+        if y_idxs and y_idxs[-1] != len(p_vals) - 1:
+            y_idxs.append(len(p_vals) - 1)
+        ax.set_yticks(y_idxs)
+        ax.set_yticklabels([p_vals[i] for i in y_idxs], fontsize=tick_fontsize)
+
+        if not show_all_tick_labels:
+            if idx < 2:
+                ax.tick_params(labelbottom=False)
+            if idx % 2 == 1:
+                ax.tick_params(labelleft=False)
+
+        if show_all_tick_labels or idx >= 2:
+            ax.set_xlabel(r"Depth $g$", fontsize=label_fontsize)
+        if show_all_tick_labels or idx % 2 == 0:
+            ax.set_ylabel(r"$p$", fontsize=label_fontsize)
+
+        ax.set_title(r"Estimator $\gamma_" + e + r"$", fontsize=title_fontsize, pad=3)
+    return im
 
 
 def plot_heatmap_combined(results: list[dict], title_prefix: str, out: str):
@@ -323,123 +444,32 @@ def plot_heatmap_combined(results: list[dict], title_prefix: str, out: str):
     Create a single figure with 4 subplots (A, B, C, D) sharing the same color scale.
     Each subplot is square with a vertical colorbar on the right.
     """
-    # First, compute all matrices and find global min/max for shared scale
-    matrices = {}
-    g_vals_all = set()
-    p_vals_all = set()
-    
-    for e in "ABCD":
-        agg = aggregate_results(results, ["g", "p"], with_std=False)
-        g_vals = sorted({int(k[0]) for k in agg})
-        p_vals = sorted({int(k[1]) for k in agg})
-        if not g_vals or not p_vals:
-            continue
-        
-        g_vals_all.update(g_vals)
-        p_vals_all.update(p_vals)
-        
-        mat = np.full((len(p_vals), len(g_vals)), np.nan, dtype=float)
-        g_i = {g: j for j, g in enumerate(g_vals)}
-        p_i = {p: i for i, p in enumerate(p_vals)}
-        for (g, p), v in agg.items():
-            mat[p_i[int(p)], g_i[int(g)]] = float(v[e])
-        
-        matrices[e] = {
-            "mat": mat,
-            "g_vals": g_vals,
-            "p_vals": p_vals,
-            "g_i": g_i,
-            "p_i": p_i,
-        }
-    
+    matrices, global_min, global_max = _compute_heatmap_matrices(results)
     if not matrices:
         return
-    
-    # Find global min/max for shared scale
-    all_values = []
-    for e in "ABCD":
-        if e in matrices:
-            mat = matrices[e]["mat"]
-            valid = mat[~np.isnan(mat)]
-            if len(valid) > 0:
-                all_values.extend(valid)
-    
-    if not all_values:
-        return
-    
-    global_min = np.log10(np.maximum(np.min(all_values), 1e-12))
-    global_max = np.log10(np.maximum(np.max(all_values), 1e-12))
-    
-    # Create figure: 4 inches wide x 3 inches tall
+
     fig = plt.figure(figsize=(4, 3))
-    
-    # GridSpec: 2x2 for subplots + 1 column for colorbar
-    # Width ratios: subplots get equal space, colorbar is thin
-    # Added more top padding for title
-    gs = fig.add_gridspec(2, 3, 
+    gs = fig.add_gridspec(2, 3,
                           width_ratios=[1, 1, 0.08],
-                          left=0.10, right=0.88, 
+                          left=0.10, right=0.88,
                           bottom=0.12, top=0.84,
                           wspace=0.15, hspace=0.30)
-    
-    axes = [[fig.add_subplot(gs[i, j]) for j in range(2)] for i in range(2)]
-    axes_flat = [axes[0][0], axes[0][1], axes[1][0], axes[1][1]]
-    
-    im = None  # Store reference to last image for colorbar
-    for idx, e in enumerate("ABCD"):
-        ax = axes_flat[idx]
-        
-        if e not in matrices:
-            ax.axis("off")
-            continue
-        
-        data = matrices[e]
-        mat = data["mat"]
-        g_vals = data["g_vals"]
-        p_vals = data["p_vals"]
-        
-        # Convert to log scale
-        mat_log = np.log10(np.maximum(mat, 1e-12))
-        
-        # Use aspect="equal" for square cells, then set_box_aspect(1) for square subplot
-        im = ax.imshow(mat_log, aspect="auto", origin="lower", cmap="viridis", 
-                       vmin=global_min, vmax=global_max)
-        ax.set_box_aspect(1)  # Force square subplot
-        
-        # Set ticks
-        ax.set_xticks(range(0, len(g_vals), 3))
-        ax.set_xticklabels([g_vals[i] for i in range(0, len(g_vals), 3)], fontsize=6)
-        ax.set_yticks(range(len(p_vals)))
-        ax.set_yticklabels(p_vals, fontsize=6)
-        
-        # Only show tick labels on outer edges
-        if idx < 2:  # Top row - hide x tick labels
-            ax.tick_params(labelbottom=False)
-        if idx % 2 == 1:  # Right column - hide y tick labels
-            ax.tick_params(labelleft=False)
-        
-        # Labels only on outer edges
-        if idx >= 2:  # Bottom row
-            ax.set_xlabel("Depth g", fontsize=8)
-        if idx % 2 == 0:  # Left column
-            ax.set_ylabel("p", fontsize=8)
-        
-        ax.set_title(r"Estimator $\gamma_" + e + r"$", fontsize=8, pad=3)
-    
-    # Add vertical colorbar on the right
+
+    axes_flat = [fig.add_subplot(gs[i, j]) for i in range(2) for j in range(2)]
+    im = _draw_heatmaps_on_axes(axes_flat, matrices, global_min, global_max)
+
     if im is not None:
         cbar_ax = fig.add_axes([0.90, 0.12, 0.025, 0.72])
         cb = fig.colorbar(im, cax=cbar_ax, orientation="vertical")
-        cb.set_label("γ", fontsize=8, labelpad=4)
-        
-        # Use FuncFormatter for colorbar
+        cb.set_label(r"$\gamma$", fontsize=8, labelpad=4)
+
         def format_cb(x, pos):
             return f"{10**x:.0e}".replace("e-0", "e-").replace("e+0", "e+")
         cb.ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(format_cb))
         cb.ax.tick_params(labelsize=6)
-    
+
     fig.suptitle(title_prefix, y=0.94, fontsize=10)
-    
+
     outp = resolve_output_path(out, PLOTS_DIR)
     outp.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(outp, dpi=300)
@@ -447,9 +477,66 @@ def plot_heatmap_combined(results: list[dict], title_prefix: str, out: str):
     print(f"Saved {outp}")
 
 
-def plot_all_heatmaps(results_diag: list[dict], results_adv: list[dict]):
-    plot_heatmap_combined(results_diag, r"Estimator $\gamma_g$ across $p$ — Diagnostic Data", "plot2_heatmap_diagnostic.pdf")
-    plot_heatmap_combined(results_adv, r"Estimator $\gamma_g$ across $p$ — Adversarial Data", "plot3_heatmap_adversarial.pdf")
+def plot_adversarial_line_and_heatmap(results_adv: list[dict], sim_adv: list[dict], p_fixed: int = 12,
+                                       out: str = "plot_adversarial_combined.pdf"):
+    """
+    Combined adversarial figure: γ vs g line plot on the left, 2×2 heatmap grid on the right.
+    """
+    matrices, global_min, global_max = _compute_heatmap_matrices(results_adv)
+    if not matrices:
+        return
+
+    d_max = int(sim_adv[0].get("d_max", 4)) if sim_adv else 4
+    line_title = rf"$\gamma$ vs $g$ ($p={p_fixed}$, $d={d_max}$)"
+
+    fig = plt.figure(figsize=(10, 3.5))
+    gs = fig.add_gridspec(2, 4,
+                          width_ratios=[2.2, 1, 1, 0.08],
+                          left=0.07, right=0.93,
+                          bottom=0.15, top=0.88,
+                          wspace=0.35, hspace=0.40)
+
+    ax_line = fig.add_subplot(gs[:, 0])
+    hm_axes = [fig.add_subplot(gs[i, j]) for i in range(2) for j in (1, 2)]
+    cbar_ax = fig.add_subplot(gs[:, 3])
+
+    _draw_gamma_vs_g_on_ax(ax_line, sim_adv, p_fixed, line_title,
+                           show_ylabel=True, show_legend=True)
+    # Fewer, clean y ticks on the log-scale line plot
+    ax_line.yaxis.set_major_locator(matplotlib.ticker.LogLocator(base=10.0, numticks=5))
+    ax_line.yaxis.set_minor_locator(matplotlib.ticker.NullLocator())
+
+    im = _draw_heatmaps_on_axes(hm_axes, matrices, global_min, global_max,
+                                label_fontsize=10, tick_fontsize=7,
+                                title_fontsize=11, n_xticks=None, p_tick_step=1,
+                                show_all_tick_labels=False)
+
+    if im is not None:
+        cb = fig.colorbar(im, cax=cbar_ax, orientation="vertical")
+        cb.set_label(r"$\gamma$", fontsize=10, labelpad=4)
+
+        def format_cb(x, pos):
+            return f"{10**x:.0e}".replace("e-0", "e-").replace("e+0", "e+")
+        cb.ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(format_cb))
+        cb.ax.tick_params(labelsize=8)
+
+    outp = resolve_output_path(out, PLOTS_DIR)
+    outp.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(outp, dpi=300)
+    plt.close(fig)
+    print(f"Saved {outp}")
+
+
+def plot_all_heatmaps(results_diag: list[dict], results_adv: list[dict], sim_adv: list[dict] | None = None,
+                      p_fixed: int = 12):
+    plot_heatmap_combined(results_diag, r"Estimator $\gamma$ across $p$ and $g$ — Diagnostic Data",
+                          "plot2_heatmap_diagnostic.pdf")
+    if sim_adv is not None:
+        plot_adversarial_line_and_heatmap(results_adv, sim_adv, p_fixed=p_fixed,
+                                          out="plot1b_3_adversarial_combined.pdf")
+    else:
+        plot_heatmap_combined(results_adv, r"Estimator $\gamma$ across $p$ and $g$ — Adversarial Data",
+                              "plot3_heatmap_adversarial.pdf")
 
 
 # -------- plot 1c: adversarial estimator A + LLMs --------
@@ -457,18 +544,10 @@ def plot_gamma_vs_g_adversarial_llm_only(results_adv: list[dict], llm_results_di
     llm = load_llm_results(llm_results_dir, filter_adversarial=True)
     if not llm: return
 
-    # Load no-tools records (files contain 'notools' in the name, skipped by load_llm_results)
-    notools_by_model: dict[str, list[dict]] = {}
-    notools_dir = resolve_output_path(llm_results_dir, REPO_ROOT)
-    for f in sorted(notools_dir.glob("*notools*.jsonl")):
-        with f.open("r") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                r = json.loads(line)
-                mdl = r.get("model") or ""
-                notools_by_model.setdefault(mdl, []).append(r)
+    # No-tool JSONL lives in *no_tools*.jsonl (and variants); glob "*notools*" misses those.
+    notools_by_model: dict[str, list[dict]] = load_llm_notools_results(
+        llm_results_dir, filter_adversarial=True, include_large=True
+    )
 
     if p_fixed is None:
         models_per_p: dict[int, set[str]] = {}
@@ -551,7 +630,7 @@ def plot_gamma_vs_g_adversarial_llm_only(results_adv: list[dict], llm_results_di
             legend_entries.append((label_name, color))
 
         ax.axhline(ref, color="k", linestyle="--", linewidth=0.8)
-        ax.set_xlabel("Depth g")
+        ax.set_xlabel(r"Depth $g$")
         ax.set_title(title_suffix)
         ax.grid(True, alpha=0.3)
         return legend_entries, sorted(all_g), max_y
@@ -564,7 +643,7 @@ def plot_gamma_vs_g_adversarial_llm_only(results_adv: list[dict], llm_results_di
         recs_picker=lambda recs_p, recs_nt: recs_nt,
         linestyle=":",
         marker="v",
-        title_suffix=f"Qwen3-2507 — No Tool Use (p={p_fixed}, d={d_max})",
+        title_suffix=rf"Qwen3-2507 — No Tool Use ($p={p_fixed}$, $d={d_max}$)",
         exclude_labels={"4B-Instruct"},
     )
     le_m, g_m, my_m = _draw_on_axis(
@@ -572,10 +651,10 @@ def plot_gamma_vs_g_adversarial_llm_only(results_adv: list[dict], llm_results_di
         recs_picker=lambda recs_p, recs_nt: recs_p,
         linestyle="-",
         marker="^",
-        title_suffix=f"Qwen3-2507 — Multi Tool Use (p={p_fixed}, d={d_max})",
+        title_suffix=rf"Qwen3-2507 — Multi Tool Use ($p={p_fixed}$, $d={d_max}$)",
     )
 
-    ax_notool.set_ylabel("Probability Correct γ")
+    ax_notool.set_ylabel(r"Probability Correct $\gamma$")
     max_y = max(my_m, my_n)
     for ax, xs in [(ax_notool, g_n), (ax_multi, g_m)]:
         _set_log_xy(ax, xs, y_min_clip * 0.8, max_y * 2.0)
@@ -655,9 +734,9 @@ def plot_gamma_bar_abcd(results_diag: list[dict], results_adv: list[dict], g_fix
     def format_y(x, pos):
         return f"{x:.0e}".replace("e-0", "e-").replace("e+0", "e+")
     ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(format_y))
-    ax.set_ylabel("Probability Correct Step $\\gamma_g$")
+    ax.set_ylabel(r"Probability Correct Step $\gamma_g$")
     ax.set_xlabel("Estimator", labelpad=10)
-    ax.set_title(f"Simulation $\\gamma_g$ (p={p_fixed}, g={g_fixed})")
+    ax.set_title(rf"Simulation $\gamma_g$ ($p={p_fixed}$, $g={g_fixed}$)")
     ax.grid(True, alpha=0.3, axis="y")
     
     legend_elements = [
@@ -679,7 +758,9 @@ def get_llm_gamma_data(excel_path: str | Path = LLM_PROMPTS_FILE):
         # Load the specific range J3:L8 from 'summary' sheet
         # J is 10th col (idx 9), L is 12th col (idx 11) -> 9:12 (exclusive 12)
         # Row 3 is idx 2, Row 8 is idx 7 -> 2:8 (exclusive 8)
-        df = pd.read_excel(excel_path, sheet_name="summary", header=None)
+        xls = pd.ExcelFile(excel_path)
+        summary_sheet = next((s for s in xls.sheet_names if s.lower() == "summary"), "summary")
+        df = pd.read_excel(excel_path, sheet_name=summary_sheet, header=None)
         data_block = df.iloc[2:8, 9:12].values
         
         # Labels corresponding to the rows in the Excel block
@@ -781,7 +862,7 @@ def _render_grouped_bars(
         return f"{x:.0e}".replace("e-0", "e-").replace("e+0", "e+")
     ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(format_y))
     random_line = ax.axhline(ref_val, color="k", linestyle="--", linewidth=0.8)
-    ax.set_ylabel("Smallest Probability Correct γ")
+    ax.set_ylabel(r"Smallest Probability Correct $\gamma$")
     ax.set_xlabel("Model")
     ax.set_title(title)
     ax.grid(True, alpha=0.3, axis="y")
@@ -916,13 +997,71 @@ def plot_gamma_bar_llm(g_fixed: int = 31, p_fixed: int = 12, llm_prompts_file: s
         groups=groups,
         hatch_legend=[("xx", "No Tool Use"), ("//", "Single Tool Use"), ("", "Multi Tool Use")],
         ref_val=ref_val,
-        title=f"LLM Performance (p={p_fixed}, d={d_max}, g={g_fixed})",
+        title=rf"LLM Performance ($p={p_fixed}$, $d={d_max}$, $g={g_fixed}$)",
         filename="plot_gamma_bar_llm.pdf",
         figsize=(6, 3),
         y_min=1e-3,
     )
+def plot_k_star_trajectories(
+    results_with_tools: dict,
+    results_without_tools: dict,
+    out: str = "plot_k_star_trajectories.pdf",
+):
+    """Per-depth k_star(g) with Jeffreys CI band; ReLU fit k* ≈ max(0, b*g + a)."""
+    fig, (ax_nt, ax_t) = plt.subplots(1, 2, figsize=(8, 3.2), sharey=True)
 
+    for ax, results, title in [
+        (ax_nt, results_without_tools, "Without Tools"),
+        (ax_t,  results_with_tools,    "With Tools"),
+    ]:
+        all_g: set[int] = set()
+        for model_name, info in sorted(results.items()):
+            if ax is ax_nt and _is_4b_instruct_model(model_name):
+                continue
+            traj = info.get("k_star_trajectory", {})
+            if not traj:
+                continue
+            traj_lo = info.get("k_star_lo_trajectory", {}) or traj
+            traj_hi = info.get("k_star_hi_trajectory", {}) or traj
+            color = COLORS.get_color(model_name)
+            short = abbreviate_model_name(model_name)
+            gs = np.array(sorted(traj), dtype=float)
+            ks = np.array([traj[int(g)] for g in gs], dtype=float)
+            ks_lo = np.array([traj_lo.get(int(g), traj[int(g)]) for g in gs], dtype=float)
+            ks_hi = np.array([traj_hi.get(int(g), traj[int(g)]) for g in gs], dtype=float)
+            all_g.update(int(g) for g in gs)
 
+            fit_label: str
+            if len(gs) >= 2:
+                slope, intercept = _fit_k_star_relu_mse(gs, ks)
+                fit_label = rf"{short}  ($k^\star \approx \max(0,{slope:.2f}g{intercept:+.2f})$)"
+            else:
+                slope = intercept = float("nan")
+                fit_label = f"{short}"
+
+            ax.fill_between(gs, ks_lo, ks_hi, color=color, alpha=0.15, linewidth=0)
+            ax.plot(gs, ks, marker="o", markersize=4, linewidth=1.2,
+                    color=color, label=fit_label)
+            if len(gs) >= 2:
+                g_grid = np.linspace(gs.min(), gs.max(), 100)
+                k_hat = np.maximum(0.0, slope * g_grid + intercept)
+                ax.plot(g_grid, k_hat, linestyle="--",
+                        color=color, alpha=0.5, linewidth=0.8)
+
+        if all_g:
+            g_sorted = sorted(all_g)
+            ax.plot(g_sorted, g_sorted, color="k", linestyle=":", linewidth=0.8, label=r"$k=g$")
+            g_lo, g_hi = min(all_g), max(all_g)
+            span = max(float(g_hi - g_lo), 1.0)
+            ax.set_xlim(g_lo - 0.05 * span, g_hi + 0.05 * span)
+
+        ax.set_xlabel(r"Depth $g$")
+        ax.set_title(title)
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=6, loc="upper left", frameon=True)
+
+    ax_nt.set_ylabel(r"Effective prefix $k^\star(g)$")
+    _save(fig, out)
 # -------- frontier-only bars at multiple g --------
 def plot_gamma_bar_llm_1d(g_values=(63, 127), p_fixed: int = 12, out: str = "plot_gamma_bar_large_llm.pdf", llm_prompts_file: str | Path = LLM_PROMPTS_FILE, llm_results_dir: str | Path = LLM_RESULTS_DIR):
     # Use hardcoded data instead of parsing
@@ -1073,8 +1212,8 @@ def plot_gamma_bar_llm_1d(g_values=(63, 127), p_fixed: int = 12, out: str = "plo
 
         ax_top = ax.secondary_xaxis("top")
         ax_top.set_xticks(x)
-        ax_top.set_xticklabels([f"g={g}" for g in g_values])
-        ax_top.set_xlabel("Depth g")
+        ax_top.set_xticklabels([rf"$g={g}$" for g in g_values])
+        ax_top.set_xlabel(r"Depth $g$")
 
         handles = [random_line]
         labels = ["Random Guess"]
@@ -1147,6 +1286,116 @@ def plot_gamma_bar_llm_1d(g_values=(63, 127), p_fixed: int = 12, out: str = "plo
                bbox_to_anchor=(0.5, -0.05), ncol=len(leg_labels),
                frameon=False, handletextpad=0.5, columnspacing=1.2)
     _save(fig, small_out)
+
+
+# -------- plot: γ vs number of tool calls (Qwen 4B-Thinking, g=127) --------
+def _is_correct_within_n_tools(record: dict, n_tools: int) -> bool:
+    """Correct if a correct boxed answer appears in any of the first `n_tools` sandboxes,
+    or (when the model used ≤ n_tools tool calls) in the final response."""
+    sandboxes = record.get("sandboxes") or []
+    tgt = record.get("target", [])
+    if not tgt:
+        return False
+    nn = record.get("n")
+    if nn is None:
+        nn = _extract_n_from_prompt(record.get("prompt", "") or "")
+    if nn is None:
+        return False
+    try:
+        target_abs = sorted([int(i) + int(nn) for i in tgt])
+    except Exception:
+        return False
+
+    for sb in sandboxes[:n_tools]:
+        stdout = (sb.get("stdout") or "") + "\n" + (sb.get("stderr") or "")
+        for ans in parse_boxed_answer(stdout):
+            if sorted(ans) == target_abs:
+                return True
+    # If we allowed at least as many tool calls as the model used, the final response counts.
+    if n_tools >= len(sandboxes) and recompute_is_correct_with_boxed_fallback(record):
+        return True
+    return False
+
+
+def plot_gamma_vs_tool_calls_4b_thinking(
+    g_fixed: int = 127,
+    p_fixed: int = 12,
+    llm_results_dir: str | Path = LLM_RESULTS_DIR,
+    out: str = "plot_gamma_vs_tool_calls_4b_thinking.pdf",
+):
+    """Bayesian γ vs number of tool calls for Qwen3-4B-Thinking and 30B-A3B-Thinking at g=g_fixed."""
+    small = load_llm_results(llm_results_dir, filter_adversarial=True)
+
+    model_specs = [
+        ("4B-Thinking",      lambda s: "4b" in s and "thinking" in s),
+        ("30B-A3B-Thinking", lambda s: "30b" in s and "thinking" in s),
+    ]
+
+    d_max = 4
+    ref_val = 1.0 / nCr(int(p_fixed), d_max - 1)
+
+    series: list[dict] = []
+    for label, pred in model_specs:
+        name = next((nm for nm in sorted(small.keys()) if pred(nm.lower())), None)
+        if name is None:
+            continue
+        recs = [r for r in small.get(name, [])
+                if int(r.get("g", -1)) == int(g_fixed) and int(r.get("p", -1)) == int(p_fixed)]
+        if not recs:
+            continue
+        d_max = int(recs[0].get("d_max", 4))
+        ref_val = 1.0 / nCr(int(p_fixed), d_max - 1)
+        max_tools = max(len(r.get("sandboxes") or []) for r in recs)
+        if max_tools <= 0:
+            continue
+        xs = list(range(1, max_tools + 1))
+        means, los, his = [], [], []
+        n = len(recs)
+        for nt in xs:
+            k = sum(1 for r in recs if _is_correct_within_n_tools(r, nt))
+            s = compute_bayesian_credible_stats(k, n, int(p_fixed), int(g_fixed), d_max, alpha=0.05)
+            means.append(s["corrected_mean"])
+            los.append(s["cred_lo"])
+            his.append(s["cred_hi"])
+        series.append({"label": label, "name": name, "xs": xs,
+                       "means": means, "los": los, "his": his})
+
+    if not series:
+        print("plot_gamma_vs_tool_calls: no records to plot")
+        return
+
+    y_min_clip = ref_val * 0.3
+
+    fig, ax = plt.subplots(figsize=(4, 3))
+    max_x = max(max(s["xs"]) for s in series)
+    max_y_seen = y_min_clip
+    for s in series:
+        color = COLORS.get_color(s["name"])
+        means = [max(m, y_min_clip) for m in s["means"]]
+        los = [max(lo, y_min_clip) for lo in s["los"]]
+        his = [max(hi, y_min_clip) for hi in s["his"]]
+        ax.plot(s["xs"], means, marker="o", markersize=4, linewidth=1.2,
+                color=color, label=s["label"])
+        ax.fill_between(s["xs"], los, his, alpha=0.15, color=color)
+        max_y_seen = max(max_y_seen, max(his))
+
+    ax.axhline(ref_val, color="k", linestyle="--", linewidth=0.8, label="Random Guess")
+
+    ax.set_xticks(list(range(1, max_x + 1)))
+    ax.set_xlabel("Number of Tool Calls")
+    ax.set_ylabel(r"Bayesian Estimate for $\gamma$")
+    ax.set_title(rf"Qwen3-2507 — Thinking ($p={p_fixed}$, $g={g_fixed}$, $d={d_max}$)")
+    ax.grid(True, alpha=0.3)
+    ax.set_yscale("log")
+    ax.set_ylim(bottom=y_min_clip * 0.8, top=max(2.0, max_y_seen * 1.5))
+
+    def format_y(x, pos):
+        return f"{x:.0e}".replace("e-0", "e-").replace("e+0", "e+")
+    ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(format_y))
+    ax.yaxis.set_major_locator(matplotlib.ticker.LogLocator(base=10.0, numticks=6))
+
+    ax.legend(fontsize=7, loc="best", frameon=True)
+    _save(fig, out)
 
 
 # -------- export: tool-usage success-rate table (CSV) --------
@@ -1269,7 +1518,7 @@ def main(
     sim_adv_file: str | Path = LLM_RESULTS_DIR / "simulation_simulation_adversarial.json",
     p_fixed: int = 12,
     llm_results_dir: str | Path = LLM_RESULTS_DIR,
-    workers: int = 8,
+    workers: int = 1,
 ):
     diag_path = resolve_output_path(diag_file, LLM_RESULTS_DIR)
     adv_path = resolve_output_path(adv_file, LLM_RESULTS_DIR)
@@ -1284,17 +1533,27 @@ def main(
     agg_diag, agg_adv = plot_gamma_vs_g(sim_diag, sim_adv, p_fixed=p_fixed)
 
     tasks = [
-        ("heatmaps", lambda: plot_all_heatmaps(results_diag, results_adv)),
-        ("bar_abcd", lambda: plot_gamma_bar_abcd(sim_diag, sim_adv, g_fixed=31, p_fixed=12)),
-        ("bar_llm", lambda: plot_gamma_bar_llm(g_fixed=31, p_fixed=12, llm_results_dir=llm_results_dir)),
-        ("plot1c", lambda: plot_gamma_vs_g_adversarial_llm_only(results_adv, llm_results_dir=llm_results_dir, p_fixed=None)),
-        ("bar_large_llm", lambda: plot_gamma_bar_llm_1d(g_values=(63, 127), p_fixed=p_fixed, out="plot_gamma_bar_large_llm.pdf", llm_results_dir=llm_results_dir)),
-        ("fit", lambda: fit_llm_to_estimator_d(llm_results_dir=llm_results_dir)),
+        ("heatmaps", lambda: plot_all_heatmaps(results_diag, results_adv, sim_adv=sim_adv, p_fixed=p_fixed), True),
+        ("bar_abcd", lambda: plot_gamma_bar_abcd(sim_diag, sim_adv, g_fixed=31, p_fixed=12), True),
+        ("bar_llm", lambda: plot_gamma_bar_llm(g_fixed=31, p_fixed=12, llm_results_dir=llm_results_dir), True),
+        ("plot1c", lambda: plot_gamma_vs_g_adversarial_llm_only(results_adv, llm_results_dir=llm_results_dir, p_fixed=None), True),
+        ("bar_large_llm", lambda: plot_gamma_bar_llm_1d(g_values=(63, 127), p_fixed=p_fixed, out="plot_gamma_bar_large_llm.pdf", llm_results_dir=llm_results_dir), True),
+        ("gamma_vs_toolcalls_4b_thinking", lambda: plot_gamma_vs_tool_calls_4b_thinking(g_fixed=127, p_fixed=p_fixed, llm_results_dir=llm_results_dir), True),
     ]
 
-    print(f"Running {len(tasks)} tasks with {workers} threads...")
+    def run_task(fn, uses_matplotlib: bool):
+        try:
+            if uses_matplotlib:
+                with _PLOT_LOCK:
+                    return fn()
+            return fn()
+        finally:
+            plt.close("all")
+            gc.collect()
+
+    print(f"Running {len(tasks)} tasks with {workers} threads (plot rendering serialized)...")
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futs = {ex.submit(fn): name for name, fn in tasks}
+        futs = {ex.submit(run_task, fn, uses_matplotlib): name for name, fn, uses_matplotlib in tasks}
         for fut in as_completed(futs):
             name = futs[fut]
             try:
@@ -1303,11 +1562,26 @@ def main(
                 import traceback
                 error_msg = str(e)
                 if "ParseException" in error_msg or "Parse" in str(type(e).__name__):
-                    print(f"Task failed: {name}: ParseException (likely due to no-latex mode conflict)")
+                    print(f"Task failed: {name}: ParseException during plot rendering")
                     print(f"  Error details: {error_msg[:200]}")
                 else:
                     print(f"Task failed: {name}: {e}")
                     traceback.print_exc()
+
+    results_with_tools = fit_llm_to_estimator_d(
+        llm_results_dir=llm_results_dir,
+        tool_condition="with_tools",
+    )
+    results_without_tools = fit_llm_to_estimator_d(
+        llm_results_dir=llm_results_dir,
+        tool_condition="without_tools",
+    )
+    try:
+        with _PLOT_LOCK:
+            plot_k_star_trajectories(results_with_tools, results_without_tools)
+    finally:
+        plt.close("all")
+        gc.collect()
 
     print("Done.")
 
@@ -1320,7 +1594,7 @@ if __name__ == "__main__":
     p.add_argument("--sim-adv", type=str, default=str(LLM_RESULTS_DIR / "simulation_simulation_adversarial.json"))
     p.add_argument("--p-fixed", type=int, default=12)
     p.add_argument("--llm-results-dir", type=str, default=str(LLM_RESULTS_DIR))
-    p.add_argument("--workers", type=int, default=12)
+    p.add_argument("--workers", type=int, default=1)
     p.add_argument("--table-only", action="store_true",
                    help="Only export the tool-usage CSV; skip all plots.")
     p.add_argument("--table-out", type=str, default="tool_usage_table.csv",

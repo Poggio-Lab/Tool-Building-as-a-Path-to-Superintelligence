@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import itertools
 import json
 import math
@@ -194,6 +193,7 @@ def is_correct_after_first_tool(record: dict) -> bool:
 def load_llm_results(
     llm_results_dir: str | Path = LLM_RESULTS_DIR,
     filter_adversarial: bool = True,
+    include_large: bool = True,
 ) -> dict[str, list[dict]]:
     results_dir = resolve_output_path(llm_results_dir, REPO_ROOT)
     if not results_dir.exists():
@@ -203,8 +203,10 @@ def load_llm_results(
     for f in results_dir.glob("*.jsonl"):
         if filter_adversarial and "adversarial" not in f.name:
             continue
+        if not include_large and "large" in f.name:
+            continue
         # No-tools experimental runs are loaded separately; skip them here
-        if "notools" in f.name:
+        if "notools" in f.name or "no_tools" in f.name:
             continue
 
         records: list[dict] = []
@@ -231,6 +233,55 @@ def load_llm_results(
             model = "/".join(model_parts) if len(model_parts) >= 2 else "_".join(model_parts)
 
         out.setdefault(str(model), []).extend(records)
+
+    return out
+
+
+_SMALL_LLM_MODEL_NAMES: tuple[tuple[str, Callable[[str], bool]], ...] = (
+    ("Qwen3-4B-Thinking-2507", lambda s: "4b" in s and "thinking" in s),
+    ("Qwen3-4B-Instruct-2507", lambda s: "4b" in s and "instruct" in s),
+    ("Qwen3-30B-A3B-Thinking-2507", lambda s: "30b" in s and "thinking" in s),
+    ("Qwen3-30B-A3B-Instruct-2507", lambda s: "30b" in s and "instruct" in s),
+)
+
+
+def _canonical_small_llm_name(model_name: str) -> str:
+    """Normalize model IDs so no-tools runs with path-like names aggregate together."""
+    key = str(model_name).lower()
+    for label, pred in _SMALL_LLM_MODEL_NAMES:
+        if pred(key):
+            return label
+    return str(model_name)
+
+
+def load_llm_notools_results(
+    llm_results_dir: str | Path = LLM_RESULTS_DIR,
+    filter_adversarial: bool = True,
+    include_large: bool = True,
+) -> dict[str, list[dict]]:
+    results_dir = resolve_output_path(llm_results_dir, REPO_ROOT)
+    if not results_dir.exists():
+        return {}
+
+    out: dict[str, list[dict]] = {}
+    concatenated_files = sorted(results_dir.glob("*no_tools_concatenated*.jsonl"))
+    merged_files = sorted(results_dir.glob("*no_tools_merged*.jsonl"))
+    renamed_files = sorted(results_dir.glob("*no_tools*.jsonl"))
+    files = concatenated_files or merged_files or renamed_files or sorted(results_dir.glob("*notools*.jsonl"))
+    for f in files:
+        if filter_adversarial and "adversarial" not in f.name:
+            continue
+        if not include_large and "large" in f.name:
+            continue
+
+        with f.open("r") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                record = json.loads(line)
+                model = _canonical_small_llm_name(record.get("model") or f.stem)
+                out.setdefault(model, []).append(record)
 
     return out
 
@@ -646,32 +697,42 @@ def gamma_D_with_k(record: dict, k_known: int) -> float:
 def fit_llm_to_estimator_d(
     llm_results_dir: str | Path = LLM_RESULTS_DIR,
     experiments_file: str | Path = STORAGE_DIR / "experiments_llm_adversarial.json",
-    output_csv: str | Path = PLOTS_DIR / "llm_estimator_d_fit.csv",
+    tool_condition: str = "tools",
+    min_fit_g: int = 0,
 ) -> dict:
     """
-    Fit two 1-parameter capacity models for effective known-prefix length k:
+    Per-depth effective-prefix analysis.
 
-      proportional: k = u * g
-      constant:     k = v
+    For each depth g, find k_star(g) = argmin_k |gamma_obs(g) - gamma_D(p, g, k)|
+    using the precomputed gamma_D(p, g, k) grid (estimator D with k known prefix
+    monomials). Then fit two trajectory models:
 
-    We compute predictions by looking up mean gamma_D(g, round(k)).
-    Model comparison: AIC from binomial log-likelihood.
-    Evidence ratio uses exp((AIC_alt - AIC_best)/2) with exponent clamped
-    to avoid overflow.
+      proportional: k(g) = round(f * g),  f in [0, 1]
+      capacity:     k(g) = min(g, c),     c in {0, ..., g_max}
+
+    Compare via AIC on the binomial log-likelihood of the per-depth correct/total
+    counts under each model's predicted gamma. One free parameter per fit.
     """
-    llm = load_llm_results(llm_results_dir, filter_adversarial=True)
+    normalized_condition = tool_condition.strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized_condition in {"tools", "with_tools", "multi_tools", "tool_use"}:
+        condition_label = "with_tools"
+        llm = load_llm_results(llm_results_dir, filter_adversarial=True, include_large=False)
+    elif normalized_condition in {"no_tools", "notools", "without_tools", "no_tool_use"}:
+        condition_label = "without_tools"
+        llm = load_llm_notools_results(llm_results_dir, filter_adversarial=True, include_large=False)
+    else:
+        raise ValueError(f"Unknown tool_condition: {tool_condition!r}")
+
     if not llm:
-        print("Warning: no LLM results; skipping fit")
+        print(f"Warning: no LLM results for {condition_label}; skipping fit")
         return {}
 
     exp_path = resolve_output_path(experiments_file, STORAGE_DIR)
     experiments = json.loads(exp_path.read_text())
 
-    rows: list[dict] = []
     results: dict = {}
 
     def safe_exp(x: float) -> float:
-        # exp(709) ~ 8e307 is near float max; clamp above to avoid OverflowError
         if x > 700:
             return float("inf")
         if x < -700:
@@ -679,23 +740,20 @@ def fit_llm_to_estimator_d(
         return float(math.exp(x))
 
     for model_name, records in sorted(llm.items()):
-        by_g = {}
-        idx_by_g = {}
+        by_g: dict[int, list[int]] = {}      # g -> [correct, total]
+        idx_by_g: dict[int, list[int]] = {}
         for r in records:
             g = int(r.get("g", 0))
             ok = recompute_is_correct_with_boxed_fallback(r)
-            c = by_g.setdefault(g, [0, 0])  # [correct,total]
+            c = by_g.setdefault(g, [0, 0])
             c[1] += 1
             c[0] += int(ok)
             ridx = r.get("record_idx")
             if isinstance(ridx, int) and 0 <= ridx < len(experiments):
                 idx_by_g.setdefault(g, []).append(ridx)
 
-        g_vals = sorted(by_g)
-        obs = {g: (by_g[g][0] / by_g[g][1]) for g in g_vals if by_g[g][1] > 0}
-        counts = {g: by_g[g][1] for g in g_vals}
-
-        if not obs:
+        g_vals = sorted(g for g in by_g if g >= int(min_fit_g))
+        if not g_vals:
             continue
 
         p_val = int(records[0].get("p", 12))
@@ -703,8 +761,8 @@ def fit_llm_to_estimator_d(
         d = d_max - 1
         rand = 1.0 / nCr(p_val, d)
 
-        # precompute gamma_D grid
-        grid = {}
+        # Precompute gamma_D(g, k) grid
+        grid: dict[tuple[int, int], float] = {}
         for g in g_vals:
             ids = idx_by_g.get(g, [])[:50]
             if not ids:
@@ -713,68 +771,95 @@ def fit_llm_to_estimator_d(
                 vals = [gamma_D_with_k(experiments[i], k) for i in ids]
                 grid[(g, k)] = float(np.mean(vals)) if vals else rand
 
-        def pred_gamma(g: int, k_eff: float) -> float:
-            k = int(round(max(0, min(g, k_eff))))
-            return float(grid.get((g, k), rand))
+        # Per-depth k_star(g) with Jeffreys CI on observed gamma propagated to k
+        k_star: dict[int, int] = {}
+        k_star_lo: dict[int, int] = {}
+        k_star_hi: dict[int, int] = {}
+        gamma_obs_by_g: dict[int, float] = {}
+        for g in g_vals:
+            n_g = by_g[g][1]
+            if n_g == 0 or (g, 0) not in grid:
+                continue
+            k_correct = by_g[g][0]
+            obs = k_correct / n_g
+            gamma_obs_by_g[g] = obs
+            obs_lo, obs_hi = jeffreys_interval(float(k_correct), int(n_g), alpha=0.05)
 
-        def loglik(k_func: Callable[[int], float]) -> float:
+            def best_k_for(target: float) -> int:
+                bk, be = 0, float("inf")
+                for k in range(g + 1):
+                    err = abs(target - grid.get((g, k), rand))
+                    if err < be:
+                        be, bk = err, k
+                return bk
+
+            k_star[g] = best_k_for(obs)
+            # gamma_D is generally non-monotone in k, so lo/hi of obs
+            # don't map to lo/hi of k. Take min/max of the three matches.
+            kl = best_k_for(obs_lo)
+            kh = best_k_for(obs_hi)
+            k_star_lo[g] = min(k_star[g], kl, kh)
+            k_star_hi[g] = max(k_star[g], kl, kh)
+
+        if not k_star:
+            continue
+
+        # Trajectory models: predict gamma at each depth from k(g), score by binomial loglik
+        def loglik_for_k_func(k_func: Callable[[int], int]) -> float:
             ll = 0.0
             for g in g_vals:
-                if g not in obs:
+                if g not in by_g:
                     continue
-                n = int(counts[g])
-                k_obs = int(round(obs[g] * n))
-                p = min(1 - 1e-10, max(1e-10, pred_gamma(g, k_func(g))))
-                ll += k_obs * math.log(p) + (n - k_obs) * math.log(1 - p)
+                n = int(by_g[g][1])
+                k_obs = int(by_g[g][0])
+                k_eff = max(0, min(g, int(k_func(g))))
+                pred = grid.get((g, k_eff), rand)
+                pred = min(1 - 1e-10, max(1e-10, pred))
+                ll += k_obs * math.log(pred) + (n - k_obs) * math.log(1 - pred)
             return ll
 
-        # grid search u in [0,1]
-        best_u, best_ll_u = 0.5, -float("inf")
-        for u in np.linspace(0.0, 1.0, 101):
-            ll = loglik(lambda gg, uu=float(u): uu * gg)
-            if ll > best_ll_u:
-                best_ll_u, best_u = ll, float(u)
+        # Fit proportional: f in [0, 1]
+        best_f, best_ll_f = 0.0, -float("inf")
+        for f in np.linspace(0.0, 1.0, 101):
+            ll = loglik_for_k_func(lambda gg, ff=float(f): int(round(ff * gg)))
+            if ll > best_ll_f:
+                best_ll_f, best_f = ll, float(f)
 
-        # grid search v in [0, max_g]
-        max_g = max(g_vals)
-        best_v, best_ll_v = 0.0, -float("inf")
-        for v in range(max_g + 1):
-            ll = loglik(lambda gg, vv=float(v): vv)
-            if ll > best_ll_v:
-                best_ll_v, best_v = ll, float(v)
+        # Fit capacity: c in {0, ..., g_max}
+        g_max = max(g_vals)
+        best_c, best_ll_c = 0, -float("inf")
+        for c in range(g_max + 1):
+            ll = loglik_for_k_func(lambda gg, cc=int(c): min(gg, cc))
+            if ll > best_ll_c:
+                best_ll_c, best_c = ll, int(c)
 
-        aic_u = 2 - 2 * best_ll_u
-        aic_v = 2 - 2 * best_ll_v
-        delta = aic_v - aic_u  # positive favors proportional
+        aic_f = 2 - 2 * best_ll_f   # 1 free param
+        aic_c = 2 - 2 * best_ll_c   # 1 free param
+        delta = aic_c - aic_f       # >0 favors proportional
         ratio = safe_exp(delta / 2.0)
 
         if delta > 2:
             winner = "proportional"
         elif delta < -2:
-            winner = "constant"
+            winner = "capacity"
         else:
             winner = "inconclusive"
 
-        results[model_name] = {"u": best_u, "v": best_v, "aic_u": aic_u, "aic_v": aic_v, "delta_aic": delta, "evidence_ratio": ratio, "winner": winner}
+        k_star_at_max = k_star.get(g_max, 0)
 
-        rows.append({
-            "model": short_model_name(model_name, 40),
-            "u (k=u*g)": f"{best_u:.4f}",
-            "v (k=v)": f"{best_v:.1f}",
-            "aic_proportional": f"{aic_u:.2f}",
-            "aic_constant": f"{aic_v:.2f}",
-            "delta_AIC (const - prop)": f"{delta:.2f}",
-            "evidence_ratio exp(delta/2)": ("inf" if math.isinf(ratio) else f"{ratio:.3g}"),
-            "better_model": winner,
-        })
-
-    outp = resolve_output_path(output_csv, PLOTS_DIR)
-    outp.parent.mkdir(parents=True, exist_ok=True)
-    if rows:
-        with outp.open("w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-            w.writeheader()
-            w.writerows(rows)
-        print(f"Saved {outp}")
+        results[model_name] = {
+            "f": best_f,
+            "c": best_c,
+            "aic_f": aic_f,
+            "aic_c": aic_c,
+            "delta_aic": delta,
+            "evidence_ratio": ratio,
+            "winner": winner,
+            "k_star_trajectory": k_star,
+            "k_star_lo_trajectory": k_star_lo,
+            "k_star_hi_trajectory": k_star_hi,
+            "k_star_at_g_max": k_star_at_max,
+            "g_max": g_max,
+        }
 
     return results

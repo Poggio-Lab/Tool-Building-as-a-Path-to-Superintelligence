@@ -1,0 +1,912 @@
+
+
+
+\documentclass{article}
+
+% if you need to pass options to natbib, use, e.g.:
+%     \PassOptionsToPackage{numbers, compress}{natbib}
+% before loading neurips_2026
+
+% The authors should use one of these tracks.
+% Before accepting by the NeurIPS conference, select one of the options below.
+% 0. "default" for submission
+\usepackage{neurips_2026}
+\usepackage{graphicx}    % Required for inserting images
+\usepackage{adjustbox}   % Required for the scale/width adjustments in your code
+\usepackage{tikz}        % Required for the diagrams in your example
+\usetikzlibrary{arrows.meta, positioning, calc}
+\usepackage{float}
+% the "default" option is equal to the "main" option, which is used for the Main Track with double-blind reviewing.
+% 1. "main" option is used for the Main Track
+%  \usepackage[main]{neurips_2026}
+% 2. "position" option is used for the Position Paper Track
+%  \usepackage[position]{neurips_2026}
+% 3. "eandd" option is used for the Evaluations & Datasets Track
+ % \usepackage[eandd]{neurips_2026}
+ % if you need to opt-in for a single-blind submission in the E&D track:
+ %\usepackage[eandd, nonanonymous]{neurips_2026}
+% 4. "creativeai" option is used for the Creative AI Track
+%  \usepackage[creativeai]{neurips_2026}
+% 5. "sglblindworkshop" option is used for the Workshop with single-blind reviewing
+ % \usepackage[sglblindworkshop]{neurips_2026}
+% 6. "dblblindworkshop" option is used for the Workshop with double-blind reviewing
+%  \usepackage[dblblindworkshop]{neurips_2026}
+
+% After being accepted, the authors should add "final" behind the track to compile a camera-ready version.
+% 1. Main Track
+ % \usepackage[main, final]{neurips_2026}
+% 2. Position Paper Track
+%  \usepackage[position, final]{neurips_2026}
+% 3. Evaluations & Datasets Track
+ % \usepackage[eandd, final]{neurips_2026}
+% 4. Creative AI Track
+%  \usepackage[creativeai, final]{neurips_2026}
+% 5. Workshop with single-blind reviewing
+%  \usepackage[sglblindworkshop, final]{neurips_2026}
+% 6. Workshop with double-blind reviewing
+%  \usepackage[dblblindworkshop, final]{neurips_2026}
+% Note. For the workshop paper template, both \title{} and \workshoptitle{} are required, with the former indicating the paper title shown in the title and the latter indicating the workshop title displayed in the footnote.
+% For workshops (5., 6.), the authors should add the name of the workshop, "\workshoptitle" command is used to set the workshop title.
+% \workshoptitle{WORKSHOP TITLE}
+
+% "preprint" option is used for arXiv or other preprint submissions
+ % \usepackage[preprint]{neurips_2026}
+
+% to avoid loading the natbib package, add option nonatbib:
+%    \usepackage[nonatbib]{neurips_2026}
+\usepackage{enumitem}
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{thm-restate}
+ \title{Tool Use Reduces Depth-Induced Collapse \\ in OOD Reasoning}
+
+ \newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{assumption}[theorem]{Assumption}
+
+\usepackage{titlesec}
+
+% \titlespacing*{\subsection}{0pt}{0.5ex}{0.5ex}
+% \titlespacing*{\section}{0pt}{1ex}{0.5ex}
+% \titlespacing*{\subsection}{0pt}{0.8ex}{0.3ex}
+% \titlespacing*{\subsubsection}{0pt}{0.5ex}{0.2ex}
+
+
+\author{%
+  David S.~Hippocampus\thanks{Use footnote for providing further information about the author, not for acknowledging funding agencies.} \\
+  Department of Computer Science \\
+  Cranberry-Lemon University \\
+  Pittsburgh, PA 15213 \\
+  \texttt{hippo@cs.cranberry-lemon.edu}
+}
+
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+
+
+Many current paths to more advanced AI depend on the assumption that large language models (LLMs) can generalize learned relationships to solve complex, out-of-distribution (OOD) problems. However, this is not an easy quality to measure. For most real-world problems and benchmarks it suffices to exploit a few memorized subproblems or a small fraction of the available data to produce a correct solution. This is interpolation. Generalization requires the capacity to make use of all available data to solve problems without these shortcuts. To test this quality, we introduce a synthetic Boolean circuit reconstruction benchmark over $GF(2)$. We use an adversarial sampling oracle to block partial-information shortcuts, ensuring that each step requires the integration of all historical context with new evidence. Our evaluations reveal that standalone LLMs fall significantly short of sustained reasoning: as problem depth increases, both small and frontier models exhibit a catastrophic collapse in their ability to accurately predict the next logical step. However, we also demonstrate that tool synthesis provides a remedy to this depth-induced reasoning collapse. When allowed to generate, execute, and iteratively refine code, even small architectures can sustain accurate reasoning over long horizons and rival frontier model performance on this task. These results indicate that synthesizing tools plays a crucial role in generalization, beyond the conventional view of merely augmenting systems with specific capabilities.
+
+
+% Many proposed paths to more advanced AI systems assume that large language models (LLMs) can use learned relationships to solve out-of-distribution (OOD) problems. Yet this capability is difficult to measure: many benchmarks contain memorized subproblems, redundant cues, or multiple valid solution paths, making it unclear whether success reflects sustained reasoning or shortcut exploitation. We introduce a Boolean reconstruction benchmark over $\mathrm{GF}(2)$ designed to isolate stepwise OOD reasoning. Using an adversarial sampling oracle, each step has a unique correct continuation that can be recovered only by combining the revealed history with new evidence. This construction allows us to measure depth-dependent next-step accuracy, the empirical analogue of the stepwise success probability required by search-based reasoning frameworks. We find that standalone LLMs exhibit depth-induced collapse: as reasoning depth increases, both small and frontier models fail to recover the next step, despite the existence of a polynomial-time solution. Tool use sharply changes this picture. When models can generate, execute, and refine code, even small models sustain accurate reasoning over long horizons and can rival frontier-model performance. These results suggest that tool synthesis is not merely a way to expand what LLMs can do, but a mechanism for preserving OOD reasoning by externalizing deterministic computation.
+
+\end{abstract}
+
+
+\section{Introduction}
+
+Many proposed paths to more advanced AI systems assume that large language models can use relationships learned from in-distribution (ID) data to solve out-of-distribution (OOD) problems~\citep{wei2022cot,wang2022selfconsistency,pmlr-v202-fu23d,10.5555/3600270.3601883,shao2024deepseekmathpushinglimitsmathematical}. A particularly elegant formalization of this idea appears in the \emph{Diligent Learner} framework~\citep{shalev2025diligent}, where reasoning is modeled as search over partial solutions and success depends on a nontrivial probability of proposing a useful next step $\gamma$. If $\gamma$ remains non-negligible, search can scale to long reasoning horizons. If $\gamma$ decays with depth for some problems, then even a powerful search procedure becomes brittle. This leads to an important empirical question: \textbf{\textit{``Do current language models preserve non-trivial next-step accuracy on challenging problems, or are they effective only when a task can be handled using memorized subproblems and redundant information?''}} 
+
+
+Fig.~\ref{fig:motfig} highlights this contrast between in-distribution reasoning, where the answer is close to familiar training examples, and out-of-distribution reasoning, where the model must extrapolate learned relationships into previously unseen regions. Existing reasoning benchmarks do not cleanly test this capability~\citep{cobbe2021trainingverifierssolvemath,hendrycks2021measuring,jimenez2024swebench}. They usually score only final answers, allow many valid intermediate paths, or contain enough redundancy for models to exploit memorized subproblems. Strong performance on such benchmarks can therefore show that a model solves a task class, but not that it can sustain stepwise out-of-distribution reasoning.
+
+To isolate this ability, we need a benchmark in which each stage has a unique correct continuation, and that continuation can be recovered only by combining the revealed history with the new data. A model that ignores either source of information should fail. Such a benchmark lets us measure whether $\gamma$ really remains nontrivial as depth increases.
+
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=1.0\linewidth]{pdf_plots/motfig.pdf}
+ \caption{The \textbf{left} panel provides an abstract depiction of training. The dots represent training datapoints in an idea space, and the arrows denote relationships that link these datapoints. The \textbf{center} panel zooms to the region around a few datapoints and visualizes the problem-solving process during inference. The empty circles represent an initial query, and the LLM moves along the arrows corresponding to relationships learned in-distribution to locate an answer. If the answer and path lies near a training datapoint (dashed concentric circles), it is considered in-distribution reasoning; otherwise, it is out-of-distribution reasoning. The long gray arrow illustrates the synthesis and application of a tool within the reasoning process, which expands the model’s OOD reasoning capabilities.}
+    \label{fig:motfig}
+\end{figure}
+
+In this work, we introduce such a benchmark using Boolean function reconstruction over $\mathrm{GF}(2)$. Boolean circuits can represent any computable function, making them ideal to understand the general reasoning behavior of these models. At the same time, unrestricted circuit recovery is not well suited for measuring stepwise reasoning: in the standard formulation, one typically tries to recover all terms at once, from an exponentially large number of examples, and validation of intermediate proposals can become prohibitively expensive. We therefore restrict the task to a structured subclass in which each stage has a unique correct continuation and candidate next steps can be validated in polynomial time.
+
+We therefore reformulate the task so that the target circuit is revealed one monomial at a time: at step $g$, the model is given the first $g$ terms along with a new batch of labeled examples and must predict the next term. Because each step has a unique correct continuation, we can estimate the probability of a correct next step in constant time, avoiding the exponential cost of full circuit-synthesis verification. To avoid situations where the model disregards some earlier results and simultaneously recovers several remaining terms, we employ a prefix-conditioned sampling oracle. This oracle provides only a constant number of examples at each step, selected so that the next monomial can be determined only together with the disclosed prefix, and so that later terms do not affect the assigned labels. This synthetic benchmark therefore captures the most general class of OOD reasoning scenarios, and the sampling oracle selects, at every step, the most difficult reasoning step that can occur which can be solved with probability 1.
+
+% Usually, Boolean reconstruction is not a step-by-step reasoning problem. Given enough data, one will recover all terms at once. So we instead design the task so that the target is revealed one monomial at a time. At step $g$, the model sees the first $g$ terms together with a new batch of labeled examples, and its goal is to predict the next term. Since there is only a single correct step given the partial monomial, it also allows us to measure the probability of predicting the correct next step in the reasoning chain in constant time, omitting the exponential cost that circuit synthesis verification typically takes.
+
+% A second challenge is to make sure the task cannot be solved by using too much information at once. If we gave enough samples to recover all remaining terms together, the problem would no longer test sequential reasoning. To avoid this, we use a prefix-conditioned sampling oracle that provides only a constant number of carefully chosen examples at each step. These examples are designed so that the next monomial can be identified only after accounting for the already revealed prefix, while future terms do not affect the labels. 
+
+% In natural problems, there is often enough redundancy that one cannot tell whether a model is truly carrying out long-horizon reasoning or simply exploiting overlapping cues. Our aim is to isolate a capability that standard evaluations do not measure well, but is essential when understanding out-of-distribution generalization.
+
+On this benchmark, standalone language models all fail as reasoning depth increases. Small models fail earlier, but the same pattern also appears in stronger frontier models without tools. This happens even though the correct next step is recoverable in polynomial time from the information provided. The issue is therefore not missing information, but difficulty using it reliably over long reasoning chains.
+
+Tools significantly change this story. When models can generate, run, and refine code, their performance rises sharply, and even small models can handle instances far beyond what they can do without tools. This indicates that tools not only broaden the range of tasks a model can tackle, but also support its ability to generalize.
+
+{\bf Contributions.\enspace} Our contributions are as follows:
+\begin{enumerate}[leftmargin=*,itemsep=0pt, parsep=0pt, topsep=0pt]
+    \item We introduce a controlled benchmark for measuring stepwise OOD reasoning as depth-dependent next-step accuracy, $\gamma_g$. The task is based on Boolean reconstruction over $\mathrm{GF}(2)$ and is designed so that every stage has a unique correct continuation.
+
+    \item We construct a prefix-conditioned sampling oracle that blocks common shortcuts. In our construction, history-only, data-only, and partial-information solvers remain near chance, while a solver that correctly combines the revealed prefix with the new evidence can identify the next term from constant-size samples with polynomial-time validation and recovery.
+
+    \item We show that standalone LLMs exhibit depth-induced collapse: even models that perform well at shallow depths rapidly lose exact next-step accuracy as the revealed prefix grows, despite the existence of a polynomial-time recovery procedure.
+
+    \item We show that tool use largely bypasses this collapse. In particular, small open-source models that can generate, execute, and revise code sustain high $\gamma_g$ at depths where much stronger standalone models fail, suggesting that tool synthesis can transform long-horizon OOD reasoning by externalizing deterministic computation.
+\end{enumerate}
+% }
+
+\section{Related Work}\label{sec:related}
+
+\textbf{Reasoning as search over partial solutions.\enspace}
+A common view of LLM reasoning is that the model does not solve a problem in one step, but searches over intermediate states. This view appears in chain-of-thought prompting~\citep{wei2022cot}, self-consistency~\citep{wang2022selfconsistency}, Tree-of-Thought search~\citep{yao2023tot}, and iterative propose--critique--revise methods such as Reflexion~\citep{shinn2023reflexion}. These methods improve performance by expanding, filtering, or revising candidate reasoning traces. More broadly, tool-use and scratchpad methods give models an external medium for maintaining intermediate state and checking substeps~\citep{nye2021workscratchpadsintermediatecomputation,schick2023toolformer,hao2023toolkengpt,parisi2022talmtoolaugmentedlanguage,10.1145/3696410.3714825}. 
+
+Our work studies a more basic question underlying these approaches: when a model is placed inside a search procedure, does it continue to assign nontrivial probability to the correct next step as the reasoning depth grows? Search-based inference is only useful if useful continuations remain reachable. If the model's next-step success probability collapses with depth, then larger search trees, more samples, or more backtracking only delay failure rather than remove it.
+
+\textbf{The Diligent Learner and the non-vanishing $\gamma$ assumption.\enspace}
+The Diligent Learner framework~\citep{shalev2025diligent} formalizes this issue directly. It models reasoning as validator-guided search over semantic states, where progress depends on the probability that the model proposes a next action that keeps the current prefix completable. Denoting this probability by $\gamma$, the framework shows that search can remain efficient when $\gamma$ is bounded away from zero. In this sense, $\gamma$ is the central local quantity that determines whether long-horizon reasoning remains feasible.
+
+Our paper targets the empirical gap left open by this theory. The Diligent Learner framework identifies the importance of non-vanishing stepwise progress, but existing evaluations do not cleanly measure whether modern LLMs satisfy this condition. In realistic benchmarks, final-answer success can hide many effects: the model may rely on memorized subproblems, exploit redundant cues, follow a different valid trajectory, or use dataset-specific shortcuts. We therefore construct a setting where the next extension is unique, polynomial-time verifiable, and recoverable only by combining the revealed prefix with the new evidence. This lets us estimate a depth-dependent analogue, $\gamma_g$, as exact next-step accuracy.
+
+\textbf{Benchmarks for reasoning and their shortcut problem.\enspace}
+LLM reasoning is commonly evaluated on mathematical, logical, coding, and agentic benchmarks, including grade-school word problems~\citep{cobbe2021trainingverifierssolvemath}, competition mathematics~\citep{hendrycks2021measuring}, challenging subsets of BIG-Bench~\citep{suzgun2022challengingbigbenchtaskschainofthought}, software engineering tasks~\citep{jimenez2024swebench,yang2025swebench}, and interactive environments for tool-using agents~\citep{ALFWorld20,zhou2024webarenarealisticwebenvironment,qin2024toolllm,liu2025agentbenchevaluatingllmsagents}. Synthetic and controlled-distribution tasks also probe compositional generalization and mathematical structure~\citep{frieder2025datamathematicalcopilotsbetter}. Closely related, recent work on logical phase transitions shows that LLM performance on symbolic reasoning can remain stable up to a critical logical depth and then collapse abruptly~\citep{zhang2026logicalphasetransitions}.
+
+These benchmarks are valuable, but they usually measure end-to-end success rather than isolated stepwise progress. Many also admit multiple valid solution paths, contain redundant information, or permit partial-pattern strategies that do not require using all available evidence. This makes them poorly suited for testing whether a model can sustain OOD reasoning over a long chain of forced intermediate steps. Our GF(2) reconstruction benchmark is designed to remove these ambiguities: each step has a single correct continuation, and data-only or history-only strategies are made ineffective by construction. In this sense, our results are complementary to logical phase-transition analyses: we study a related collapse phenomenon, but use a construction in which the local next-step probability can be measured directly and compared against information-restricted baselines.
+
+\textbf{Tool use as externalized computation.\enspace}
+A second line of work augments LLMs with programs, APIs, calculators, retrieval systems, or other tools~\citep{schick2023toolformer,hao2023toolkengpt,gao2023pal,chen2022program,cai2023large}. In many of these systems, tool use is framed as a way to expand what the model can do: the model delegates arithmetic, code execution, search, retrieval, or environment interaction to an external component. This perspective also appears in agent frameworks and multi-agent systems, where one model can call another model, verifier, planner, or environment-grounded actor as a specialized subroutine~\citep{wu2023autogen}.
+
+Our results suggest a sharper role for tools. In our benchmark, the relevant information is already present, and the next step is recoverable in polynomial time. The failure of standalone LLMs is therefore not caused by missing knowledge, but by the need to carry out precise deterministic computation inside the model's own token-by-token reasoning process. This complements work such as program-aided reasoning and Reflexion: the relevant effect is not only that programs or feedback loops improve final answers, but that executable state can prevent the per-step success probability from decaying as the horizon grows. Tool synthesis changes this burden: the model can specify the computation once, execute it externally, inspect the result, and revise the implementation if needed. Thus, tools do not merely add capabilities; they can reduce the effective reasoning depth that must be handled internally by the LLM, helping prevent depth-induced collapse.
+
+\textbf{Positioning.\enspace}
+Taken together, prior work shows that search, verification, tool use, and agentic decomposition can improve LLM reasoning. Our contribution is to isolate a failure mode that these systems implicitly depend on but rarely measure directly: the decay of exact next-step success with reasoning depth. We introduce a shortcut-resistant GF(2) reconstruction benchmark that operationalizes this quantity, show that standalone models exhibit depth-induced collapse, and show that tool-enabled models recover by offloading deterministic computation into executable artifacts.
+
+% \section{Related Work}\label{sec:related}
+
+% \textbf{Reasoning as search with verification.\enspace}
+% A long line of work treats reasoning as a search problem where a model proposes candidate steps or solutions and an evaluation signal filters them; in LLMs, this appears in chain-of-thought prompting \citep{wei2022cot,wang2022selfconsistency}, Tree-of-Thought search over partial reasoning states \citep{yao2023tot}, and iterative propose--critique--revise agentic loops such as Reflexion \citep{shinn2023reflexion}. These approaches are often augmented with tool use~\citep{schick2023toolformer,hao2023toolkengpt,parisi2022talmtoolaugmentedlanguage,10.1145/3696410.3714825} and scratchpads ~\citep{nye2021workscratchpadsintermediatecomputation} to maintain intermediate state and enable efficiently checkable substeps. On the theory side, chain-of-thought can be formalized as a task decomposition that makes otherwise hard concept classes learnable in a PAC-style setting \citep{yang2025chainofthought,joshi2025theorylearningautoregressivechain}, and next-token predictors can be viewed as general-purpose learners under suitable conditions \citep{10.5555/3692070.3693470}. Closely related, the LLM-ERM framework treats the LLM as proposing hypotheses and a verifier as enforcing correctness \citep{singhal2025llm_erm}.
+
+% \textbf{The Diligent Learner.\enspace} 
+% Motivated by this broader view of reasoning as search guided by evaluation, a recent paper \citep{shalev2025diligent} introduced the Diligent Learner framework. It formalizes reasoning as building a rooted search tree whose root encodes the problem instance, and whose nodes represent \emph{semantic} reasoning states (partial chains). A root-to-leaf path corresponds to a proposed chain-of-thought (CoT). Leaves have two special types: \textsc{done} (a completed solution) and \textsc{backtrack} (indicating a jump to an earlier node). A \emph{validator} $V$ checks if a proposed step could logically follow from a prior one; a \emph{golden path} is a root-to-\textsc{done} path accepted by $V$. 
+
+% Let $\pi_\theta(\cdot \mid h, V)$ be a stochastic policy over valid actions given a partial reasoning state $h$ (a prefix of a path). An \emph{extension} action $a$ proposes the next semantic step, and $S$ is a function that returns true if there exists a path to the conclusion of a reasoning problem given the prefix $(h,a)$. Its analysis isolates a single bottleneck, the per-step success probability $\gamma$:
+% \begin{equation}\label{eq:gamma-step}
+% \Pr_{a\sim \pi_\theta(\cdot\mid h)} \left[a\in \{\forall a : S(h,a) =1\}\right] \;\ge\; \gamma.
+% \end{equation}
+% Intuitively, $\gamma$ is the probability mass assigned to \emph{useful} next moves that keep the trace completable. The original diligent learner allows the model to make incorrect extensions so long as it is able to realize and revert via depth-first-search. However, in this paper we assume a very strong validator that prevents the model from going down incorrect paths, so we never need to fine-tune the model to learn how to backtrack. Because this represents a best-case instance of the original diligent learner framework, \textbf{any failure in this setting implies failure in the original} diligent learner scenario.
+
+% If the policy keeps a nontrivial chance $\gamma$ of proposing a good next step and can backtrack to the last correct prefix, then depth-first search reaches a validator-accepted leaf with high probability without exponential blowup. For a target failure probability $\delta$ and maximum depth $T_{\max}$, the analysis sets $O\left( T_{\max}\cdot \frac{\log(T_{\max}/\delta)}{\gamma} \right)$, which is polynomial in $T_{\max}$ for constant $\gamma$ \citep{shalev2025diligent}. Thus, the central requirement is that $\gamma$ not decay with depth; otherwise, the search budget grows rapidly and the guarantee becomes vacuous. Our work targets the empirical gap left open by this theory: $\gamma$ is defined abstractly, but there is no standard benchmark in which (i) the correct extension is unique at each step and (ii) shortcuts that ignore either the accumulated history or the new evidence are information-theoretically ineffective.
+
+% \textbf{LLMs and Tool Synthesis.\enspace} 
+% A bottleneck in scaling large language models to reliably solve out-of-distribution (OOD) tasks lies in the burden placed upon them during standard inference. Currently, standalone LLMs are expected to act simultaneously as both \textit{semantic problem solvers} and \textit{computational machines}. For instance, in our GF(2) benchmark, an unassisted LLM must not only deduce the correct logical constraints necessary to isolate the next monomial (problem solving), but it must also implicitly simulate the binary arithmetic and masking operations step-by-step within its internal activations (computation). 
+
+% This conflation of roles is profoundly fragile. While next-token prediction is an effective mechanism for learning semantic relationships and specifying algorithms, it is highly unsuited for deep, deterministic computational execution \citep{gao2023pal, chen2022program}. As reasoning horizons extend, the probability of an arithmetic or state-tracking error compounds, causing the stepwise success probability $\gamma$ to catastrophically degrade.
+
+% Tool synthesis offers a principled mechanism to decouple these two roles. Rather than relying on the LLM to execute the computation, the model synthesizes an executable program, script, or API call that offloads the deterministic work to an external environment. In this paradigm, the LLM acts purely as the problem solver: it translates natural language and contextual evidence into a formal specification. The external tool, whether a Python interpreter, a SAT solver, or a calculator, acts as the computational machine \citep{schick2023toolformer, cai2023large}. By synthesizing tools, we effectively bound the temporal and logical horizon over which the LLM must reason. The model only needs to maintain a high $\gamma$ long enough to generate the correct interface constraints for the tool, drastically shrinking the required search depth and shielding the reasoning chain from compounding execution errors.
+
+% This abstraction seamlessly generalizes to the design of multi-agent systems and agentic swarms \citep{wu2023autogen}. In a swarm architecture, the "tool" being synthesized or called is often another specialized LLM agent, a verification loop, or an environment-grounded actor. From the perspective of the orchestrating model, delegating a sub-task is mathematically equivalent to a tool call: it requires formulating a problem specification, defining an expected solution format, and executing the hand-off. Consequently, the core underlying competence required to achieve "superintelligence" through either tool use or agent swarms is the same: \textit{interface design}. We argue that advancing the model's ability to natively define and adhere to robust interfaces is the critical bottleneck to maintaining a non-vanishing $\gamma$ over arbitrary problem complexities.
+
+% \textbf{Benchmarks for testing reasoning in LLMs.\enspace} 
+% Reasoning in LLMs is commonly evaluated via static, single-shot benchmarks spanning mathematical and logical problem solving, including grade-school word problems and multi-step arithmetic \citep{cobbe2021trainingverifierssolvemath}, competition-style mathematics \citep{hendrycks2021measuring}, and curated hard subsets of broad capability suites \citep{suzgun2022challengingbigbenchtaskschainofthought}. A complementary line of work uses synthetic or controlled-distribution tasks to probe compositional generalization and algorithmic structure \citep{frieder2025datamathematicalcopilotsbetter,jimenez2024swebench,yang2025swebench}. Finally, interactive evaluations target agentic reasoning with tools and environments, where success depends on multi-step planning and external actions \citep{ALFWorld20,zhou2024webarenarealisticwebenvironment,qin2024toolllm,liu2025agentbenchevaluatingllmsagents}.
+
+% While these benchmarks are valuable for measuring end-to-end task performance, they typically (i) score only the final answer, (ii) admit many valid intermediate trajectories, and (iii) do not isolate whether success comes from the evolving history, the current evidence, or dataset-specific shortcuts. In contrast, our goal is to operationalize the Diligent Learner’s per-step parameter $\gamma$ in a setting where each depth $g$ has a \emph{unique} correct extension and where solvers that ignore either the revealed prefix or the new step-specific samples are information-theoretically ineffective. The stepwise GF(2) reconstruction benchmark we introduce is designed to meet these requirements, enabling direct measurement of $\gamma_g$ as exact-next accuracy with a polynomial-time validator.
+
+
+% \begin{figure}[t]
+%   \centering
+%   \begin{adjustbox}{width=0.49\columnwidth,valign=t}
+%     \begin{tikzpicture}[
+%       >=Latex,
+%       font=\Large,
+%       box/.style={
+%         draw=black, fill=blue!10, rounded corners=8pt,
+%         align=center, inner sep=8pt, minimum height=2.2cm,
+%         text width=\boxw
+%       },
+%       arrow/.style={->, draw=black, line width=1.1pt},
+%       num/.style={
+%         circle, draw=black, fill=white, line width=0.9pt,
+%         minimum size=10mm, inner sep=0pt, font=\normalsize
+%       }
+%     ]
+%     \newlength{\boxw}\setlength{\boxw}{6.8cm}
+%     \newlength{\branchsep}\setlength{\branchsep}{1.2cm}
+%     \newlength{\subsep}\setlength{\subsep}{1.0cm}
+
+%     \newcommand{\numnw}[2]{%
+%       \node[num] at ([xshift=-5pt,yshift=5pt]#1.north west) {#2};}
+
+%     \node[box, text width=7.4cm, minimum height=2.3cm] (n0) {%
+%       Prove: there are no coprime positive\\
+%       integers $a,b,c$ s.t.\ $a^2+b^2=6c^2$.};
+%     \numnw{n0}{0}
+
+%     \node[box, below left=1.2cm and \branchsep of n0, text width=6.2cm] (n1) {%
+%       Let's show that strict\\inequality must hold.};
+%     \numnw{n1}{1}
+
+%     \node[box, below=1.05cm of n1] (n2) {%
+%       All 3 numbers are coprime,\\
+%       hence they must be different.\\
+%       Assume w.l.o.g.\ $a<b$, and\\
+%       consider the 3 cases for which\\
+%       $c>b,\ c\in(a,b),\ c<a$.};
+%     \numnw{n2}{2}
+
+%     \node[box, below=1.05cm of n2] (n3) {%
+%       Case 1: $a^2+b^2<2c^2<6c^2$,\\
+%       we get strict inequality as desired.};
+%     \numnw{n3}{3}
+
+%     \node[box, below=1.05cm of n3] (n4) {%
+%       Case 3: $c<a$ but it tells us\\
+%       nothing about the relation between\\
+%       $a^2+b^2$ and $6c^2$, so we are stuck.};
+%     \numnw{n4}{4}
+
+%     \node[box, below=1.05cm of n4, text width=5.8cm] (n5) {%
+%       Backtrack to node (0).};
+%     \numnw{n5}{5}
+
+%     \node[box, below right=1.2cm and \branchsep of n0, text width=6.2cm] (n6) {%
+%       Show that for some $k$, LHS $\bmod\,k$\\
+%       doesn't equal RHS $\bmod\,k$,\\
+%       hence equality can't hold.};
+%     \numnw{n6}{6}
+
+%     \node[box, below left=1.0cm and \subsep of n6, text width=6.6cm] (n7) {%
+%       Pick $k=2$. RHS is even, so\\
+%       LHS must be even as well. The\\
+%       parity of $a^2$ is the same as $a$. Since\\
+%       $a,b$ are coprime, one of them\\
+%       must be odd. But maybe both are\\
+%       odd, so there's no contradiction.};
+%     \numnw{n7}{7}
+
+%     \node[box, below=0.95cm of n7, text width=5.4cm] (n8) {%
+%       Backtrack to (6).};
+%     \numnw{n8}{8}
+
+%     \node[box, below right=1.0cm and \subsep of n6, text width=5.4cm] (n9) {%
+%       Pick $k=3$. RHS is divisible\\
+%       by 3, hence RHS $\bmod\,3 = 0$.};
+%     \numnw{n9}{9}
+
+%     \node[box, below=0.95cm of n9] (n10) {%
+%       For every $a$, if $a\bmod 3 = 0$ then\\
+%       so is $a^2$. Otherwise write $a=3n+r$\\
+%       for $r\in\{1,2\}$, then\\
+%       $a^2 \bmod 3 = r^2 \bmod 3 = 1$.};
+%     \numnw{n10}{10}
+
+%     \node[box, below=0.95cm of n10] (n11) {%
+%       Since $a,b$ are coprime, at least one\\
+%       of them is not divisible by 3.\\
+%       Hence $a^2+b^2 \bmod 3 \in \{1,2\}$.};
+%     \numnw{n11}{11}
+
+%     \node[box, below=0.95cm of n11] (n12) {%
+%       We have shown that LHS $\bmod\,3$ is in\\
+%       $\{1,2\}$ while RHS $\bmod\,3$ is 0. Done.};
+%     \numnw{n12}{12}
+
+%     \draw[arrow] (n0.south west) -- (n1.north);
+%     \draw[arrow] (n1.south) -- (n2.north);
+%     \draw[arrow] (n2.south) -- (n3.north);
+%     \draw[arrow] (n3.south) -- (n4.north);
+%     \draw[arrow] (n4.south) -- (n5.north);
+%     \draw[arrow] (n0.south east) -- (n6.north);
+%     \draw[arrow] (n6.south west) -- (n7.north);
+%     \draw[arrow] (n6.south east) -- (n9.north);
+%     \draw[arrow] (n7.south) -- (n8.north);
+%     \draw[arrow] (n9.south) -- (n10.north);
+%     \draw[arrow] (n10.south) -- (n11.north);
+%     \draw[arrow] (n11.south) -- (n12.north);
+%     \end{tikzpicture}
+%   \end{adjustbox}%
+%   \hfill%
+%   \begin{adjustbox}{width=0.49\columnwidth,valign=t}
+%     \begin{tikzpicture}[
+%       font=\footnotesize,
+%       >=Latex,
+%       node/.style={draw, rounded corners=2pt, align=center, inner sep=2.6pt},
+%       leaf/.style={node},
+%       edge/.style={->, line width=0.7pt, line cap=round,
+%                    shorten >=1.2pt, shorten <=1.2pt},
+%       back/.style={->, dashed, line width=0.7pt, line cap=round,
+%                    shorten >=1.2pt, shorten <=1.2pt},
+%       lab/.style={font=\scriptsize, inner sep=1pt, fill=white,
+%                   fill opacity=0.95, text opacity=1, rounded corners=1pt}
+%     ]
+
+%     \node[node] (h0) {$h_0$\\(problem)};
+%     \node[node, right=22mm of h0, yshift=-6mm]  (h1)  {$h_1$};
+%     \node[node, below=8mm of h1]                (h2)  {$h_2$};
+%     \node[node, below=8mm of h2]                (h3)  {$h_3$};
+%     \node[node, right=22mm of h2]               (bad) {$h_2\oplus a'$};
+%     \node[leaf, below=8mm of bad]               (fail){\textsc{fail}\\\textsc{backtrack}};
+%     \node[leaf, below=9mm of h3, xshift=-2mm]   (done){\textsc{done}\\candidate};
+%     \node[node, right=18mm of done]             (V)   {Validator $V$\\accepts?};
+%     \node[leaf, right=18mm of V]                (acc) {$V=1$\\(golden)};
+
+%     \draw[edge] (h0) -- node[lab, midway, above] {extend} (h1);
+%     \node[lab] at ($(h0)!0.55!(h1)+(0,0.55)$)
+%       {$a\in\mathcal{G}(h)$,\;w.p.\ $\ge \gamma$};
+
+%     \draw[edge] (h1) -- node[lab, midway, left]  {extend} (h2);
+%     \draw[edge] (h2) -- node[lab, midway, left]  {extend} (h3);
+%     \draw[edge] (h2) -- node[lab, midway, above] {extend} (bad);
+%     \draw[edge] (bad) -- (fail);
+
+%     \path (fail.north) ++(0,14mm)   coordinate (c1);
+%     \path (h1.north)   ++(18mm,12mm) coordinate (c2);
+%     \draw[back] (fail.north) .. controls (c1) and (c2) ..
+%       node[lab, pos=0.55, above] {$\beta(h)=1$} (h1.east);
+
+%     \draw[edge] (h3)   -- node[lab, midway, left] {\textsc{done}} (done);
+%     \draw[edge] (done) -- (V);
+%     \draw[edge] (V)    -- (acc);
+%     \end{tikzpicture}
+%   \end{adjustbox}
+%   \caption{\textbf{Left:} Diligent learner visualization from
+%     \citep{ShalevShwartzShashua2025Diligent}.
+%     \textbf{Right:} Diligent learner as validator-guided DFS\@.
+%     Good extensions occur with probability at least~$\gamma$.
+%     On failure, the policy backtracks to the deepest correct
+%     prefix $\beta(h)$ and continues search.}
+%   \label{fig:combined}
+% \end{figure}
+
+
+% {\bf Reasoning as search with verification.\enspace}
+% A long line of work treats reasoning as a search problem where a model proposes candidate steps or solutions and an evaluation signal filters them; in LLMs, this appears in chain-of-thought prompting  \citep{wei2022cot,wang2022selfconsistency}, Tree-of-Thought search over partial reasoning states \citep{yao2023tot}, and iterative propose--critique--revise agentic loops such as Reflexion \citep{shinn2023reflexion}. These approaches are often augmented with tool use~\citep{schick2023toolformer,hao2023toolkengpt,parisi2022talmtoolaugmentedlanguage,10.1145/3696410.3714825} and  scratchpads~\citep{nye2021workscratchpadsintermediatecomputation} to maintain intermediate state and enable efficiently checkable substeps. On the theory side, chain-of-thought can be formalized as a task decomposition that makes otherwise hard concept classes learnable in a PAC-style setting \citep{yang2025chainofthought,joshi2025theorylearningautoregressivechain}, and next-token predictors can be viewed as general-purpose learners under suitable conditions \citep{10.5555/3692070.3693470}. 
+% Closely related, the LLM-ERM framework treats the LLM as proposing hypotheses and a verifier as enforcing correctness \citep{singhal2025llm_erm}.
+
+% {\bf The Diligent Learner.\enspace} Motivated by this broader view of reasoning as search guided by evaluation, a recent paper \citep{shalev2025diligent} introduced the Diligent Learner framework in order to formalize the process as validator-guided depth-first search with a \textsc{backtrack} action. Its analysis isolates a single bottleneck, the per-step success probability $\gamma$, defined as the probability mass the policy assigns to ``good'' next steps that keep the current prefix completable. If $\gamma$ does not collapse with depth and backtracking returns to the deepest correct prefix with high probability, search succeeds with controlled overhead \citep{shalev2025diligent}. 
+% Our work targets the empirical gap left open by this theory: $\gamma$ is defined abstractly, but there is no standard benchmark in which (i) the correct extension is unique at each step and (ii) shortcuts that ignore either the accumulated history or the new evidence are information-theoretically ineffective. We design such a benchmark so that $\gamma_g$ is directly measurable as exact-next accuracy at depth $g$.
+
+% {\bf Benchmarks for testing reasoning in LLMs.\enspace} Reasoning in LLMs is commonly evaluated via static, single-shot benchmarks spanning mathematical and logical problem solving, including grade-school word problems and multi-step arithmetic \citep{cobbe2021trainingverifierssolvemath}, competition-style mathematics \citep{hendrycks2021measuring}, and curated hard subsets of broad capability suites \citep{suzgun2022challengingbigbenchtaskschainofthought}. A complementary line of work uses synthetic or controlled-distribution tasks to probe compositional generalization and algorithmic structure, such as formal mathematical expression generation \citep{frieder2025datamathematicalcopilotsbetter} and software engineering benchmarks \citep{jimenez2024swebench,yang2025swebench}. Finally, interactive evaluations target agentic reasoning with tools and environments, where success depends on multi-step planning and external actions (e.g., embodied or text-based worlds, or web interaction) \citep{ALFWorld20,zhou2024webarenarealisticwebenvironment,qin2024toolllm,liu2025agentbenchevaluatingllmsagents}.
+
+
+% While these benchmarks are valuable for measuring end-to-end task performance, they typically (i) score only the final answer, (ii) admit many valid intermediate trajectories, and (iii) do not isolate whether success comes from the evolving history, the current evidence, or dataset-specific shortcuts. In contrast, our goal is to operationalize the Diligent Learner’s per-step parameter $\gamma$ in a setting where each depth $g$ has a \emph{unique} correct extension and where solvers that ignore either the revealed prefix or the new step-specific samples are information-theoretically ineffective. The stepwise GF(2) reconstruction benchmark we introduce is designed to meet these requirements, enabling direct measurement of $\gamma_g$ as exact-next accuracy with a polynomial-time validator.
+
+% \section{LLMs and Tool Synthesis}\label{sec:tools}
+
+% A fundamental bottleneck in scaling large language models to reliably solve out-of-distribution (OOD) tasks lies in the dual burden placed upon them during standard inference. Currently, standalone LLMs are expected to act simultaneously as both \textit{semantic problem solvers} and \textit{computational machines}. For instance, in our GF(2) benchmark, an unassisted LLM must not only deduce the correct logical constraints necessary to isolate the next monomial (problem solving), but it must also implicitly simulate the binary arithmetic and masking operations step-by-step within its internal activations (computation). 
+
+% This conflation of roles is profoundly fragile. While next-token prediction is an effective mechanism for learning semantic relationships and specifying algorithms, it is highly unsuited for deep, deterministic computational execution \citep{gao2023pal, chen2022program}. As reasoning horizons extend, the probability of an arithmetic or state-tracking error compounds, causing the stepwise success probability $\gamma$ to catastrophically degrade, as demonstrated in our empirical results (Section \ref{sec:results}).
+
+% \textbf{Tool Synthesis as Offloading.\enspace} Tool synthesis offers a principled mechanism to decouple these two roles. Rather than relying on the LLM to execute the computation, the model synthesizes an executable program, script, or API call that offloads the deterministic work to an external environment. In this paradigm, the LLM acts purely as the problem solver: it translates natural language and contextual evidence into a formal specification. The external tool, whether a Python interpreter, a SAT solver, or a calculator, acts as the computational machine \citep{schick2023toolformer, cai2023large}.
+
+% By synthesizing tools, we effectively bound the temporal and logical horizon over which the LLM must reason. The model only needs to maintain a high $\gamma$ long enough to generate the correct interface constraints for the tool, drastically shrinking the required search depth and shielding the reasoning chain from compounding execution errors.
+
+% \textbf{Agent Swarms as Tool Networks.\enspace} This abstraction seamlessly generalizes to the design of multi-agent systems and agentic swarms \citep{wu2023autogen}. In a swarm architecture, the "tool" being synthesized or called is often not a deterministic calculator, but rather another specialized LLM agent, a verification loop, or an environment-grounded actor. From the perspective of the orchestrating model, delegating a sub-task to an agent in a swarm is mathematically equivalent to a tool call: it requires formulating a problem specification, defining an expected solution format, and executing the hand-off.
+
+% Consequently, the core underlying competence required to achieve "superintelligence" through either tool use or agent swarms is fundamentally the same: \textit{interface design}. Current coding-based frameworks predominantly address how to specify the problem and the solution, but largely neglect the design of the interfaces through which these subproblems are modularized, composed, and reliably reused by the model. We argue that for both discrete tool synthesis and complex agent swarms, advancing the model's ability to natively define and adhere to robust interfaces is the critical bottleneck to maintaining a non-vanishing $\gamma$ over arbitrary problem complexities.
+
+
+% \section{The Diligent Learner}\label{sec:background:diligent-tech}
+
+
+% {\bf Reasoning as a search tree with validation.\enspace} The Diligent Learner formalizes reasoning as building a rooted search tree whose root encodes the problem instance, and whose nodes represent \emph{semantic} reasoning states (partial chains). A root-to-leaf path corresponds to a proposed chain-of-thought (CoT). Leaves have two special types: \textsc{done} (a completed solution) and \textsc{backtrack} (indicating a jump to an earlier node). A \emph{validator} $V$ checks a proposed step could logically follow from a prior one; a \emph{golden path} is a root-to-\textsc{done} path accepted by $V$ (see Fig.~\ref{fig:visualization}).
+
+% {\bf Generator policy and step-success probability.\enspace}  Let $V$ be a validator on the proposed next step. Let $\pi_\theta(\cdot \mid h, V)$ be a stochastic policy over valid actions given a partial reasoning state $h$ (a prefix of a path). An \emph{extension} action $a$ proposes the next semantic step and $S$ is a function that returns true if there exists a path to the conclusion of a reasoning problem given the prefix $(h,a)$.
+
+
+% \begin{equation}\label{eq:gamma-step}
+% \Pr_{a\sim \pi_\theta(\cdot\mid h)} \left[a\in \{\forall a. S(h,a) =1\}\right] \;\ge\; \gamma.
+% \end{equation}
+% Intuitively, $\gamma$ is the probability mass assigned to \emph{useful} next moves that keep the trace completable.
+
+% {\bf Learned backtracking.\enspace} The original diligent learner allows the model to make incorrect extensions so long as it is able to realize and revert via depth-first-search. However, in this paper we assume a very strong validator that prevents the model from going down incorrect paths so we never need to fine-tune the model to learn how to back-track. Because this represents a best-case instance of the original diligent learner framework, \textbf{any failure in this setting implies failure in the original} diligent learner scenario.
+
+
+% {\bf The implications of $\gamma$.\enspace} If the policy keeps a nontrivial chance $\gamma$ of proposing a good next step and can backtrack to the last correct prefix, then depth-first search reaches a validator-accepted leaf with high probability without exponential blowup. For a target failure probability $\delta$ and maximum depth $T_{\max}$, the analysis sets $O\left(
+% T_{\max}\cdot \frac{\log(T_{\max}/\delta)}{\gamma}
+% \right)$, which is polynomial in $T_{\max}$ for constant $\gamma$ \citep{shalev2025diligent}. Thus, the central requirement is that $\gamma$ not decay with depth; otherwise the search budget grows rapidly and the guarantee becomes vacuous.
+
+
+
+\section{Theory and Benchmark}\label{sec:theory}
+
+In this section, we formalize the stepwise GF(2) reconstruction task used to empirically bound $\gamma_g$. By framing reasoning as an iterative decoding process, we require the model to extend an evolving partial solution (the prefix) by integrating it with a new batch of step-specific evidence. The core of our construction is a statistical obfuscation mechanism to block three prevalent shortcuts: (i) \emph{data-only} prediction that attempts to infer the next term without the historical context, (ii) \emph{statistical-leakage} prediction that uses statistics about the data and problem specification to make educated guesses without truly incorporating all data and (iii) \emph{history-only} prediction that relies purely on extrapolating the prefix without considering the new observations.
+
+\subsection{Problem formulation}\label{sec:theory:estimators}
+
+We instantiate this in the reconstruction of Boolean functions over GF(2) under a fixed-prefix statistical obfuscation sampling oracle.
+
+{\bf Targets in algebraic normal form (ANF) over GF(2).\enspace}
+Let $x=(a,v)\in\{0,1\}^{n+p}$ where $a=(a_1,\dots,a_n)\in\{0,1\}^n$ are \emph{address bits} and
+$v=(v_1,\dots,v_p)\in\{0,1\}^p$ are \emph{payload bits}. We consider Boolean targets represented in Algebraic Normal Form (ANF) as XORs of monomials $f(a,v) = \bigoplus_{j=1}^{n} t_j(a,v)$, where $t_j(a,v):= a_j\,M_j(v)$, $M_j(v):=\prod_{i\in S_j} v_i$, such that each support $S_j\subseteq[p]$ has fixed size $|S_j|=d-1$.
+Thus each term has payload-degree $d{-}1$ and total degree $d$ in $(a,v)$.
+An \emph{instance} is specified by the ordered sequence of supports $(S_1,\dots,S_n)$
+(equivalently, the ordered ANF terms $(t_1,\dots,t_n)$), sampled once and then fixed.
+
+{\bf Stepwise reconstruction game and step-success.\enspace}
+At step $g\in\{0,\dots,n-1\}$ the learner is given (i) the ordered prefix $P_g:=(t_1,\dots,t_g)$ and
+(ii) a new labeled sample set $\mathsf S_g:=\{(x^{(k)},y^{(k)})\}_{k=1}^K$ generated by the step-$g$ oracle.
+The learner outputs a candidate monomial $\hat t$ and succeeds iff $\hat t=t_{g+1}$. We define the benchmark step-success probability:
+\begin{equation}\label{eq:gamma_exact}
+\gamma_g \;:=\; \Pr_{(P_g,\mathsf S_g,t_{g+1}),\,\hat t\sim\pi_\theta(\cdot\mid P_g,\mathsf S_g)}\big[\hat t=t_{g+1}\big],
+\end{equation}
+where the probability is over instance generation, oracle sampling, and model stochasticity.
+Because the instance commits to an ordered sequence, at depth $g$ there is a unique correct extension $t_{g+1}$,
+so $\gamma_g$ directly operationalizes step-success in our benchmark.
+
+{\bf Estimator classes.\enspace} We distinguish solvers by their information access: (i) \textbf{Diligent Estimator} ($\mathcal A_g$): access to $(P_g,\mathsf S_g)$; (ii) \textbf{Data-only Estimator} ($\mathcal B_g$): access to $\mathsf S_g$ but not $P_g$; (iii) \textbf{History-only Estimator} ($\mathcal C_g$): access to $P_g$ but not $\mathsf S_g$; (iv) \textbf{Partial Estimator} ($\mathcal D_g$): partial access to  $P_g$ and $\mathsf S_g$.
+% \begin{enumerate}[leftmargin=*]
+%   \item .
+%   \item .
+%   \item .
+%   \item 
+% \end{enumerate}
+Let $\gamma_g^{\mathcal X}$ denote the exact-next success probability for class $\mathcal X$ at step $g$. Our benchmark is designed to enforce a separation of the form
+\begin{small}
+\begin{equation}\label{eq:separation_goal}
+\min_g \gamma_g^{\mathcal A} \;\ge\; Q
+\quad\text{while}\quad
+\gamma_g^{\mathcal B},\,\gamma_g^{\mathcal C},\,\gamma_g^{\mathcal D}
+\;\approx\; \tfrac{1}{\binom{p}{d-1}}.
+\end{equation}
+\end{small}
+for a nontrivial constant $1\geq Q \gg 0$.
+
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{pdf_plots/plot1b_3_adversarial_combined.pdf}
+
+    \caption{\small
+    \textbf{Left:} Only history and data sustain reliable next-step prediction. We plot step success $\gamma_g$ (the probability mass assigned to the correct next monomial) versus depth $g$ for each estimator class. Curves show the mean over $2000$ generated circuits per depth, with shaded Jeffreys intervals.
+    \textbf{Right:} As both $g$ and $p$ increase, estimators with imperfect information tend to collapse toward zero probability mass on the correct next monomial. Only estimator $\mathcal{A}$ (history+data) consistently maintains high $\gamma_g$. In contrast, $\mathcal{B}$ (data-only) and $\mathcal{D}$ (partial) often collapse toward zero, while $\mathcal{C}$ (history-only) remains near chance. The heatmap is based on $200$ generated circuits for each hyperparameter setting.}
+    
+    \label{fig:gamma_simulations}
+\end{figure}
+
+\subsection{Statistical Obfuscation: Construction and Guarantees}\label{sec:theory:construction_and_guarantees}
+
+{\bf Theoretical objectives.\enspace}
+Our benchmark is designed to block shortcut reasoning so that problem complexity scales predictably with depth. To achieve this, we introduce a \textit{statistical obfuscation sampling oracle} in which the revealed history acts as a cryptographic key that unmasks the information needed to identify the correct next term. For the benchmark to satisfy this goal, the construction must provide three guarantees:
+\begin{enumerate}[leftmargin=*]
+    \item \emph{No history-only shortcuts:} The sequence of prior steps provides no predictive information about the \emph{next} step without the new data.
+    \item \emph{No statistical leakage:} The labels are not heavily biased toward $0$ or $1$; otherwise, a model could guess the answer without reasoning.
+    \item \emph{No data-only shortcuts:} The new data provides negligible information without the revealed history.
+\end{enumerate}
+
+Below, we detail the construction of our instances and oracle, proving how each component satisfies these three objectives.
+
+{\bf Instance Generation.\enspace} 
+We first generate the underlying \emph{instance}. We sample an ordered sequence of payload supports $S_1,\dots,S_n\subseteq[p]$ with $|S_j|=d-1$ once per instance. This fixes the ordered Algebraic Normal Form (ANF) terms $(t_1,\dots,t_n)$. 
+
+Because the sequence of supports is sampled independently, the history prefix provides no mutual information about the upcoming support. This guarantees that history-only solvers fail.
+
+\begin{restatable}[History-only is prior guessing]{lemma}{HistoryOnly}\label{lem:history_only}
+Assume the instance distribution samples supports $S_1,\dots,S_n$ i.i.d.\ uniformly (\emph{with replacement}) from $\{S\subseteq[p]:|S|=d-1\}$. Then for any $g<n$, conditioned on the revealed prefix $P_g$, the next support $S_{g+1}$ is uniform over $\{S\subseteq[p]:|S|=d-1\}$ and independent of $P_g$. Consequently, any history-only estimator satisfies $\Pr[\widehat S = S_{g+1}] \le \tfrac{1}{\binom{p}{d-1}}$.
+\end{restatable}
+
+{\bf Payload Distribution.\enspace} 
+To prevent trivial statistical leakage, we fix a Hamming weight $w$ and sample payloads uniformly from $\{v\in\{0,1\}^p:\|v\|_0=w\}$. Under this distribution, every monomial fires with probability $\rho(w) = \binom{w}{d-1}/\binom{p}{d-1}$ (Lem.~\ref{lem:monomial_weight}, App.~\ref{appendix:lemma-proofs}). We choose the weight $w^\star$ that makes $\rho$ as close to $1/2$ as possible, ensuring that monomial evaluations are nearly balanced and eliminating bias shortcuts.
+
+{\bf Obfuscation Sampling.\enspace} 
+Finally, we define the \emph{step-$g$ sampling oracle}. Given an instance and depth $g\in\{0,\dots,n-1\}$, the oracle returns a new labeled set $\mathsf S_g=\{(a^{(k)},v^{(k)},y^{(k)})\}_{k=1}^K$ by sampling i.i.d.\ examples as follows: 
+(i) Set the target address bit $a_{g+1}=1$ and set all future bits $a_j=0$ for all $j>g+1$; 
+(ii) Sample the prefix address bits $a_1,\dots,a_g \stackrel{i.i.d.}{\sim}\mathrm{Bernoulli}(1/2)$; 
+(iii) Sample the payload $v$ uniformly from $\{v:\|v\|_0=w^\star\}$; 
+(iv) Output the label $y := f(a,v)$.
+
+Because $a_{g+1}=1$ and all subsequent address bits are $0$, the resulting label naturally decomposes into a mask and a signal:
+\begin{equation}\label{eq:otp_decomp}
+y \;=\; \underbrace{\Big(\bigoplus_{j=1}^{g} a_j\, M_j(v)\Big)}_{\text{prefix obfuscation}}
+\;\oplus\;
+\underbrace{M_{g+1}(v)}_{\text{next-term signal}}.
+\end{equation}
+
+This mask is computable from the prefix $(P_g, x)$, allowing a diligent solver to recover the signal. To a data-only estimator lacking the prefix, however, the mask acts as a high-entropy obfuscator: the Bayes advantage from any single sample decays as $\tfrac{1}{2}|1-2\rho|^{m}$, where $m$ is the number of active prefix bits (Lem.~\ref{lem:bayes_masking}, App.~\ref{appendix:lemma-proofs}). Since $a_1,\dots,a_g\stackrel{i.i.d.}{\sim}\mathrm{Bernoulli}(1/2)$, a typical example has $m \approx g/2$, so when $\rho\approx 1/2$ the labels reveal essentially nothing about the next-term signal without the prefix. For a fixed batch size, this remains true for the whole step-specific batch at large depth: with high probability every row contains many active prefix bits, and therefore every row is strongly masked (Cor.~\ref{cor:batch_masking}). This is the regime in which our long-depth evaluations operate; the estimator simulations in Fig.~\ref{fig:gamma_simulations} also test whether finite-depth joint correlations create a practical data-only shortcut.
+
+{\bf Recoverability in polynomial time for diligent solvers.\enspace} See App.~\ref{appendix:poly-time-recovery}.
+
+{\bf Sample complexity.\enspace} Once the prefix mask is removed, each step reduces to recovering a single Boolean conjunction, independent of depth~$g$. Thm.~\ref{thm:recoverability_poly} gives a polynomial-time decoder using $O(\log(p/\delta))$ samples for fixed degree and constant firing probability. Thus the full-information solver needs only a constant-size step-specific batch, while for data-only solvers the same fixed batch is exponentially masked as depth grows.
+
+\subsection{Benchmark Protocol}
+\label{sec:benchmark}
+
+This section describes how the construction in Sec.~\ref{sec:theory} is instantiated as an LLM benchmark.
+
+{\bf Prompt structure.\enspace} Each step of the reconstruction game is presented as a single-turn completion problem. The variables $(a,v)$ are flattened into a single ordered sequence
+$x_0,\dots,x_{N-1}$. Each prompt contains three components:
+(1) global metadata, including the ambient dimension $N$ and monomial degree;
+(2) the revealed prefix $P_g$, written as logical clauses; and
+(3) the step-specific evidence $\mathsf S_g$, formatted as $K=32$ space-separated binary rows to reduce tokenization artifacts.
+
+The prompt also specifies the active address variable $x_g$ and the partition point $n$. Thus, the model only needs to identify the remaining $d-1$ payload variables of $M_{g+1}$ among indices in $[n,N-1]$. Since models do not always follow the requested output format, we use a regex-based parser to extract the predicted set of payload indices from the completion.
+
+{\bf Validation and evaluation.\enspace} By construction, each benchmark step has a unique correct continuation; see Section~\ref{sec:theory:estimators}. Validation therefore reduces to checking whether the predicted payload-index set exactly matches the ground-truth set. This gives an $O(d)$ validator, avoiding the high cost of verifying arbitrary intermediate circuit descriptions.
+
+We estimate the depth-dependent step-success probability $\gamma_g$ using exact-match accuracy. To measure how proposal quality changes with reasoning depth, we evaluate at exponentially spaced depths, $g = 2^k - 1$. This isolates depth-induced degradation in next-step prediction while keeping the evaluation focused on the same local quantity required by the Diligent Learner analysis.
+
+\section{Empirical Results}\label{sec:results}
+
+We now validate our benchmark through experiments with perfect Bayesian estimators and compare the performance with that of modern LLMs. 
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{pdf_plots/plot1c_gamma_vs_g_adversarial_llm_notool.pdf}
+  \caption{\small {\bf (\textbf{right}) Tool synthesis dramatically improves small LLM performance, approaching optimal Bayesian estimation . (\textbf{left}) Without tools, models exhibit depth-induced collapse in next-step prediction.} The figure shows step-success $\gamma_g$ (probability mass on the correct next monomial) versus circuit depth $g$ for Qwen3-2507 models under adversarial sampling ($p=12$, $d=4$). Despite a polynomial-time decoder existing at every step (Thm.~\ref{thm:recoverability_poly}), all models degrade with depth. Larger and ``thinking'' variants perform better at shallow depths, but performance drops sharply at intermediate depths, approaching the trivial baseline $\gamma_{\mathrm{triv}}$. This limit highlights an inability to maintain the prefix-conditioned cancellation required for continued progress.}
+
+    \label{fig:small_llm_gamma_vs_g}
+
+\end{figure}
+
+\subsection{Estimator Simulations}
+
+
+% We evaluated the four estimators from Section~\ref{sec:theory:estimators}, alongside small and frontier LLMs, to empirically analyze how $\gamma_g$ changes with depth. As Fig.~\ref{fig:gamma_simulations} shows, no partial-information estimators solve the problem for $g \ge 31$, whereas Estimator $\mathcal{A}$ solves every case.
+We first check that the benchmark operates as designed. Sec.~\ref{sec:theory:estimators} introduced four classes of estimators, each with different levels of access to the prefix and to the new evidence. The theoretical analysis predicts that a solver that can use both sources of information should succeed, whereas solvers that rely solely on the history, solely on the data, or on only partial access should fail. Fig.~\ref{fig:gamma_simulations} exhibits the expected behavior. For $g \ge 31$, no partial-information estimator is able to solve the task and as $g$ increases the performance of all estimators besides the full information estimator $\mathcal{A}$ degrades regardless of the number of inputs $p$. Additional non-adversarial comparisons are shown in Fig.~\ref{fig:adv-comp}. This demonstrates that the benchmark is indeed behaving as it was designed.
+
+\subsection{Small LLMs}~\label{sec:results:small}
+
+
+We next ask whether small language models behave more like the diligent estimator or like the partial-information baselines. To test this, we evaluated four Qwen3-2507 models: \texttt{4B-Instruct}, \texttt{4B-Thinking}, \texttt{30B-A3B-Instruct}, and \texttt{30B-A3B-Thinking}. We ran inference in vLLM on $3000$ generated instances, split evenly across $g\in\{0,1,3,7,15,31\}$, using adversarial sampling with $(p,d)=(12,4)$. Consistent decoding required long contexts ($32{,}768$ tokens for the 4B models and $81{,}920$ for the 30B models).
+
+Fig.~\ref{fig:small_llm_gamma_vs_g} shows a clear depth-induced collapse. All models degrade as $g$ increases, despite the fact that the next step remains recoverable in polynomial time from the information provided (Thm.~\ref{thm:recoverability_poly}). \texttt{4B-Instruct} performs indistinguishably from random guessing even at the easiest settings, so we omit it for clarity. The stronger models perform better at shallow depths, but their next-step accuracy still drops sharply as the reasoning horizon grows. In particular, \texttt{Qwen3-30B-A3B-Thinking} improves substantially over its instruct counterpart at small $g$, yet still deteriorates at around $g=15$, approaching the trivial baseline $\gamma_{\mathrm{triv}}$.
+
+This pattern matches our predictions. The benchmark is designed so that progress requires using more and more of the revealed prefix to cancel the oracle mask and isolate the next signal. A model that cannot reliably carry that prefix-conditioned computation forward should therefore drift toward the partial-information regime as depth increases. 
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{pdf_plots/plot_gamma_bar_large_llm_small.pdf}
+    \caption{\small {\bf Tool synthesis enables reliable performance at extreme reasoning depths.} Empowered to build and iterate on tools, even small models (\textbf{left}) rival frontier models (\textbf{right}). Frontier models leveraging tools maintain a high $\gamma_g$ with minimal degradation, even at significant depths. Prohibiting tools drops performance substantially as problem size scales. The Opus no-tool runs are excluded from the no-tool analysis because the model occasionally used tools despite instructions to the contrary. Error bars indicate Jeffreys Bayesian confidence intervals.}
+    \label{fig:frontier_depth}
+
+\end{figure}
+
+\begin{figure}[b]
+    \centering
+    \includegraphics[width=0.5\linewidth]{pdf_plots/plot_gamma_vs_tool_calls_4b_thinking.pdf}
+    \caption{\small
+    {\bf Iterative tool use is essential for small models.}
+    For \texttt{Qwen3-4B-Thinking}, next-step accuracy improves as the model is allowed more code execution and revision cycles. A single generated program is often insufficient at large depth, while repeated execution feedback enables the model to repair errors and recover the prefix-conditioned computation.
+    }
+    \label{fig:tool_calls_4b_thinking}
+\end{figure}
+
+We fit each model's accuracy curve to an effective-prefix Bayesian estimator. We model performance at depth $g$ as if the solver uses only $k$ of the $g$ revealed terms, testing both proportional scaling ($k=ug$) and constant-capacity scaling ($k=v$). Tab.~\ref{tab:effective_prefix_fit} shows that \texttt{Qwen3-30B-A3B-Thinking} behaves as though it uses a constant fraction of the prefix ($u\approx 0.47$), while \texttt{Qwen3-30B-A3B-Instruct} scales much more weakly ($u\approx 0.15$). The 4B models do not clearly distinguish between proportional and constant-capacity fits. Overall, these fits support the same interpretation: as the prefix grows, limited effective use of prior terms pushes the model toward the same failure mode as the partial-information estimators.
+
+We then tested whether the four Qwen3-2507 models could overcome depth-induced collapse when given the ability to run code. We parsed code blocks from model outputs and executed them on-device in a secure \texttt{RestrictedPython} sandbox, appending the result or error message to the context and allowing up to $10$ iterations. For the extended depths $g=63$ and $g=127$, the small-model tool-use runs use the same evaluation set as the frontier-model comparison below. With iterative tool use, small models achieve high accuracy even at these depths, approaching the optimal Bayesian baseline and, in some cases, rivaling frontier models (Fig.~\ref{fig:all_llms_comp}). However, the 4B model fails at $g=127$ when restricted to a single, unrevised tool call (Fig.~\ref{fig:tool_calls_4b_thinking}); its improvement depends on proposing code, observing its behavior, and revising it. This supports our central interpretation: iterative tool use changes the effective reasoning process. Instead of carrying the full prefix-conditioned computation internally across many tokens, the model externalizes it into an executable artifact, inspects failures, and repairs the procedure. This is the mechanism by which tool use prevents depth-induced collapse in our benchmark.
+
+
+
+
+
+\subsection{Frontier LLMs}\label{sec:results:frontier}
+We next evaluate whether depth-induced collapse persists in frontier systems. We test GPT-5.2 with extended thinking, Claude Opus 4.5 with maximum thinking, and Gemini 3 Pro (Jan. 2026). Because frontier models produce long reasoning traces, repeating the full protocol from Sec.~\ref{sec:results:small} was cost-prohibitive. We therefore run a smaller diagnostic evaluation: $60$ queries per model across depths $g\in\{31,63,127\}$ with $(p,d)=(12,4)$, giving $10$ queries per model-depth-tool setting. For each model, half of the prompts prohibit tool use, while the other half allow any strategy, including code generation and execution. We exclude the Opus no-tool condition from the no-tool aggregate because it occasionally used tools despite the prompt-level prohibition.
+
+{\bf Frontier models delay collapse, but do not remove it.\enspace} Fig.~\ref{fig:frontier_depth} shows that frontier models substantially outperform the small no-tool models from Sec.~\ref{sec:results:small}. At depths where small standalone models approach random guessing, frontier models often retain nontrivial next-step accuracy. This indicates that scale and stronger inference-time reasoning improve the effective step-success probability $\gamma_g$. However, the valid no-tool frontier conditions still degrade as depth increases. 
+
+{\bf Tool use stabilizes $\gamma_g$ over long horizons.\enspace} Allowing tool use changes the trend. Tool-enabled frontier models maintain high $\gamma_g$ even at $g=127$, far above the trivial baseline $\gamma_{\mathrm{triv}}$. The same effect appears for small models: once they can generate, execute, and revise code, their performance rises dramatically and can rival frontier no-tool performance.
+
+These results clarify the mechanism behind depth-induced collapse. Each benchmark step requires two operations: first, the model must infer the correct constraints from the prefix and the new examples; second, it must execute the corresponding GF(2) computation exactly. Standalone LLMs must perform both operations internally through token-by-token reasoning. As depth grows, the prefix-conditioned computation becomes longer and more brittle, causing $\gamma_g$ to decay.
+
+Tool use separates these two roles. The model specifies the computation in code, delegates execution to an external interpreter, observes the result or error, and revises the program if needed. This reduces the reasoning burden on the transformer itself. Tools thus do more than expand the set of tractable tasks: they preserve stepwise OOD reasoning by externalizing deterministic computation as illustrated in Fig.~\ref{fig:motfig}.
+
+
+Overall, the frontier-model results reinforce the main conclusion of the benchmark. Larger models delay depth-induced collapse, but tool use changes the computational structure of the problem. By moving exact symbolic execution out of the model and into an executable artifact, tool-enabled systems maintain a much more stable step-success probability over long reasoning horizons.
+
+
+\section{Discussion}
+
+This paper provides an empirical test of a central assumption behind the \textit{Diligent Learner} framework: that models maintain a nontrivial next-step success probability as reasoning depth grows. Our adversarial GF(2) reconstruction benchmark blocks shallow pattern matching by requiring each step to combine the revealed prefix with new evidence. The results show a clear divide: standalone language models exhibit depth-induced collapse in $\gamma_g$, behaving increasingly like partial-information estimators, while tool-enabled models sustain much higher $\gamma_g$ by externalizing state tracking and exact computation. This suggests that scalable reasoning may depend less on deeper test-time search alone, and more on giving models reliable interfaces for building, executing, and revising modular tools.
+
+The benchmark is intentionally narrow: it uses symbolic GF(2) reconstruction to create a setting where shortcuts can be controlled and the next step is exactly verifiable. This makes the failure mode easy to measure, but it does not by itself establish how often the same collapse appears in less formal natural-language or interactive tasks. The experiments also measure tool use in a sandboxed code-execution setting, so the gains come with practical costs in latency, execution infrastructure, and interface reliability. Future work should test whether the same depth-dependent behavior appears in broader OOD settings where the relevant state is less algebraic but still must be carried forward over many steps.
+
+\newpage
+
+\bibliography{references}
+\bibliographystyle{icml2026}
+
+% \bibliographystyle{plainnat}
+% \input{arxiv_citations.bbl}
+\onecolumn
+
+\appendix
+
+\section{Other Simulations}~\label{appendix:other-simulations}
+
+See Figs.~\ref{fig:tool_calls_4b_thinking}, \ref{fig:all_llms_comp}, \ref{fig:adv-comp}, and \ref{fig:min_gamma}.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.8\linewidth]{pdf_plots/plot_gamma_bar_llm.pdf}
+\caption{\small
+{\bf Tool use closes much of the gap between small and frontier models.}
+At depth $g=31$, small standalone Qwen models are near the random-guess baseline, whereas frontier models retain substantially higher $\gamma_g$. With code execution, however, small thinking models recover sharply and approach frontier-level performance. This indicates that depth-induced collapse is not determined only by model scale; externalizing the GF(2) computation into tools can substantially stabilize stepwise reasoning.
+}
+    \label{fig:all_llms_comp}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\linewidth]{pdf_plots/plot2_heatmap_diagnostic.pdf}
+    \caption{\small As both $g$ and $p$ increase, the probability of an estimator with imperfect information begins to collapse to zero. Only Estimator $\mathcal{A}$ is able to consistently produce the next monomial. The above heatmap was constructed through generating $200$ circuits for each combination of hyperparameters and computing the corresponding $\gamma_g$ for each $p$. This diagram shows the performance when not using the adversarial dataset construction. }
+    \label{fig:adv-comp}
+\end{figure}
+
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\linewidth]{pdf_plots/plot_gamma_bar_abcd.pdf}
+    \caption{ The figure above shows how $\gamma_g$ changes for Estimators $\mathcal{A}$, $\mathcal{B}$, $\mathcal{C}$, and $\mathcal{D}$ when the data is biased adversarially (as in the results so far) preventing identification of monomials from frequency statistics, and without de-biasing.}
+    \label{fig:min_gamma}
+
+    
+\end{figure}
+
+
+
+
+\begin{table*}[t]
+\centering
+\caption{\textbf{Likelihood-based fit of LLM accuracy to an effective-prefix model.}
+Accuracy as a function of prefix length $g$ is fit using two one-parameter models for the effective number of known prefix terms: proportional $k=ug$ and constant-capacity $k=v$.
+Fits use the binomial log-likelihood aggregated across depths; models are compared via AIC.
+Reported $\Delta\mathrm{AIC}=\mathrm{AIC}_{\text{constant}}-\mathrm{AIC}_{\text{proportional}}$, so positive values favor proportional scaling.
+Values $\Delta\mathrm{AIC}<2$ indicate no meaningful distinction.}
+
+\label{tab:effective_prefix_fit}
+\begin{tabular}{lcccc}
+\toprule
+Model & $u$ & $v$ & $\Delta\mathrm{AIC}$ & Better \\
+\midrule
+Qwen3-30B-A3B-Instruct-2507 & 0.15 & 0.00 & 2.21 & $u$ \\
+Qwen3-30B-A3B-Thinking-2507 & 0.47 & 0.00 & 228.08 & $u$ \\
+Qwen3-4B-Instruct-2507     & 0.08 & 0.00 & 2.32 & $u$ \\
+Qwen3-4B-Thinking-2507     & 0.05 & 0.00 & 0.00 & -- \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+
+\section{Deferred Lemma Statements and Proofs}~\label{appendix:lemma-proofs}
+
+Below we state and prove the full versions of the lemmas summarized in Section \ref{sec:theory:construction_and_guarantees}.
+
+\begin{lemma}[Monomial firing probability at fixed Hamming weight]\label{lem:monomial_weight}
+Fix integers $p\ge d-1\ge 1$ and $w\in\{0,\dots,p\}$.
+Let $v$ be uniform over the Hamming sphere $\{v\in\{0,1\}^p:\|v\|_0=w\}$, and fix any $S\subseteq[p]$ with $|S|=d-1$.
+Define $M_S(v):=\prod_{i\in S} v_i$.
+Then
+\[
+\Pr \big[M_S(v)=1\big]
+=
+\begin{cases}
+\displaystyle \frac{\binom{w}{d-1}}{\binom{p}{d-1}}
+= \frac{\binom{p-(d-1)}{w-(d-1)}}{\binom{p}{w}}
+& \text{if } w\ge d-1,\\[8pt]
+0 & \text{if } w<d-1.
+\end{cases}
+\]
+\end{lemma}
+
+\begin{proof}
+The event $M_S(v)=1$ is exactly the event that all coordinates in $S$ are contained in the support of $v$.
+If $w<d-1$, this is impossible. Otherwise, among all $\binom{p}{d-1}$ possible supports $S$, exactly $\binom{w}{d-1}$ are subsets of the $w$ active coordinates of $v$, giving the first expression.
+Equivalently, one can count payloads: after requiring the $d-1$ coordinates in $S$ to be active, the remaining $w-(d-1)$ active coordinates may be chosen from the other $p-(d-1)$ coordinates, giving $\binom{p-(d-1)}{w-(d-1)}/\binom{p}{w}$.
+\end{proof}
+
+\begin{restatable}[Bayes masking given observed $(a,v)$]{lemma}{BayesMasking}\label{lem:bayes_masking}
+Assume the instance distribution samples $S_1,\dots,S_g,S_{g+1}$ i.i.d.\ uniformly from $\{S\subseteq[p]:|S|=d-1\}$,
+independently of the oracle samples. Fix a step $g$ and condition on a realized example $(a,v)$ with $\|v\|_0=w^\star$.
+Let
+\[
+\rho:=\rho(w^\star)=\Pr_{S}\!\big[M_S(v)=1\big]=\frac{\binom{w^\star}{d-1}}{\binom{p}{d-1}},
+\quad
+m(a):=\sum_{j=1}^g a_j,
+\quad
+B(a,v):=\bigoplus_{j=1}^{g} a_j M_j(v).
+\]
+Then, marginalizing over the unknown prefix supports $(S_1,\dots,S_g)$, for each $r \in \{0,1\}$,
+\[
+\Pr\big[B(a,v)=r \mid a,v\big]
+\;=\;
+\tfrac{1}{2}\big[1+(-1)^r(1-2\rho)^{m(a)}\big].
+\]
+Moreover, $B(a,v)$ is independent of $b=M_{g+1}(v)$ given $(a,v)$, and since $y=B(a,v)\oplus b$ we have
+\[
+\left|\Pr[y=b\mid a,v]-\tfrac12\right|
+\;=\;
+\tfrac{1}{2}|1-2\rho|^{m(a)}.
+\]
+\end{restatable}
+
+\begin{proof}
+Condition on the realized $(a,v)$. For each active prefix address bit $a_j=1$, the random variable $M_j(v)$ is Bernoulli with mean $\rho$, because $S_j$ is uniform over supports of size $d-1$. These variables are independent across $j$ under the i.i.d.\ instance distribution. Terms with $a_j=0$ do not affect the XOR, so $B(a,v)$ is the parity of $m(a)$ independent Bernoulli$(\rho)$ variables.
+
+Writing $m=m(a)$, for independent Bernoulli variables $Z_1,\dots,Z_m$ with $\Pr[Z_i=1]=\rho$, the parity $Z_1\oplus\cdots\oplus Z_m$ satisfies
+\[
+\mathbb E[(-1)^{Z_1\oplus\cdots\oplus Z_m}]
+=\prod_{i=1}^m \mathbb E[(-1)^{Z_i}]
+=(1-2\rho)^m.
+\]
+Since this expectation is $\Pr[\mathrm{parity}=0]-\Pr[\mathrm{parity}=1]$, we obtain
+\[
+\Pr[B(a,v)=r\mid a,v]
+=\tfrac12\big[1+(-1)^r(1-2\rho)^{m(a)}\big].
+\]
+The next support $S_{g+1}$ is sampled independently of the prefix supports, so $b=M_{g+1}(v)$ is independent of $B(a,v)$ given $(a,v)$. With $y=B(a,v)\oplus b$, the event $y=b$ is exactly $B(a,v)=0$, hence
+\[
+\left|\Pr[y=b\mid a,v]-\tfrac12\right|
+=\left|\Pr[B(a,v)=0\mid a,v]-\tfrac12\right|
+=\tfrac12 |1-2\rho|^{m(a)}.
+\]
+\end{proof}
+
+\begin{corollary}[Large-depth masking for fixed batches]\label{cor:batch_masking}
+Fix a step-specific batch size $K$ and let $m_k=\sum_{j=1}^g a_j^{(k)}$ be the number of active prefix bits in row $k$.
+For any threshold $\tau<g/2$,
+\[
+\Pr\!\left[\min_{k\le K} m_k < \tau\right]
+\le
+K\exp\!\left(-\frac{(g/2-\tau)^2}{g}\right).
+\]
+On the complementary event, Lem.~\ref{lem:bayes_masking} bounds the Bayes advantage in every row by
+\[
+\tfrac{1}{2}|1-2\rho|^{\tau}.
+\]
+Thus, for fixed $K$ and $\rho$ bounded away from $0$ and $1$, the row-wise information available to a data-only estimator decays exponentially with depth.
+\end{corollary}
+
+\begin{proof}
+For each row, $m_k\sim\mathrm{Binomial}(g,1/2)$. A standard Chernoff bound gives
+\[
+\Pr[m_k<\tau]\le \exp\!\left(-\frac{(g/2-\tau)^2}{g}\right)
+\]
+for $\tau<g/2$. A union bound over the $K$ rows gives the first claim. If all rows satisfy $m_k\ge \tau$, Lem.~\ref{lem:bayes_masking} gives row-wise Bayes advantage at most $\tfrac{1}{2}|1-2\rho|^{m_k}\le \tfrac{1}{2}|1-2\rho|^\tau$ in each row.
+\end{proof}
+
+\section{The Monomial can be Recovered in Polynomial Time}~\label{appendix:poly-time-recovery}
+
+Given $P_g$, a solver can form residual labels
+\begin{equation}\label{eq:residual}
+r^{(k)}
+\;:=\;
+y^{(k)} \oplus \bigoplus_{j=1}^{g} a^{(k)}_j M_j\!\big(v^{(k)}\big)
+\;=\;
+M_{g+1}\!\big(v^{(k)}\big),
+\end{equation}
+so recovery reduces to identifying the unknown degree-$(d-1)$ support $S_{g+1}$ from labeled payloads.
+
+Let $K_+ := \{k: r^{(k)}=1\}$ and $T:=|K_+|$. Consider the decoder
+\begin{equation}\label{eq:intersection_decoder}
+\widehat S \;:=\; \bigcap_{k\in K_+} \mathrm{supp}\!\big(v^{(k)}\big),
+\end{equation}
+which outputs $\widehat S$ if $T\ge 1$ and $|\widehat S|=d-1$, and otherwise declares failure.
+
+\begin{theorem}[Poly-time recovery under fixed-weight payloads]\label{thm:recoverability_poly}
+Fix an instance with $p>d-1$ and assume payloads are i.i.d.\ uniform on $\{v\in\{0,1\}^p:\|v\|_0=w^\star\}$ with $w^\star\ge d-1$.
+Let $\rho=\rho(w^\star)=\Pr[M_{g+1}(v)=1]$ and $T=|K_+|$. Then $\Pr[T=0]=(1-\rho)^K$.
+Moreover, conditioned on $T\ge 1$, the decoder succeeds with probability at least
+\begin{equation}\label{eq:recover_bound_T}
+1 - \min\Big\{1,\; (p-(d-1))\Big(\frac{w^\star-(d-1)}{p-(d-1)}\Big)^T\Big\}.
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+If $r^{(k)}=1$ then $M_{g+1}\!\big(v^{(k)}\big)=1$, which is equivalent to
+$S_{g+1}\subseteq \mathrm{supp}\!\big(v^{(k)}\big)$.
+Thus for every $k\in K_+$ we have $S_{g+1}\subseteq \mathrm{supp}\!\big(v^{(k)}\big)$, and hence
+\[
+S_{g+1}\subseteq \bigcap_{k\in K_+}\mathrm{supp}\!\big(v^{(k)}\big) \;=\; \widehat S.
+\]
+Therefore, conditioned on $T\ge 1$, the intersection decoder can fail only if $\widehat S$ contains at least one
+\emph{extraneous} coordinate $i\notin S_{g+1}$, i.e., some $i\in [p]\setminus S_{g+1}$ appears in every positive support.
+
+Fix any $i\notin S_{g+1}$ and consider a single draw $v$ conditioned on $r=1$
+(equivalently, $S_{g+1}\subseteq \mathrm{supp}(v)$).
+Under the fixed-weight model, after forcing ones on $S_{g+1}$, the remaining $w^\star-(d-1)$ ones are chosen
+uniformly among the $p-(d-1)$ coordinates in $[p]\setminus S_{g+1}$. Hence
+\[
+\Pr[i\in \mathrm{supp}(v)\mid r=1] \;=\; \frac{w^\star-(d-1)}{p-(d-1)}.
+\]
+Now condition on the value of $T$ and on the index set $K_+$ itself. Because the original examples are i.i.d.,
+the payloads $\{v^{(k)}\}_{k\in K_+}$ are i.i.d.\ draws from the conditional distribution $(v\mid r=1)$, so
+\[
+\Pr \Big[i\in \mathrm{supp}(v^{(k)})\ \forall k\in K_+ \,\Big|\, T\Big]
+\;=\;
+\Big(\frac{w^\star-(d-1)}{p-(d-1)}\Big)^T.
+\]
+Taking a union bound over the $p-(d-1)$ possible extraneous coordinates gives
+\[
+\Pr\big[\widehat S\neq S_{g+1}\mid T\big]
+\;\le\;
+\big(p-(d-1)\big)\Big(\frac{w^\star-(d-1)}{p-(d-1)}\Big)^T,
+\]
+which implies \eqref{eq:recover_bound_T}. Finally, since
+$T=\sum_{k=1}^K \mathbf{1}\{r^{(k)}=1\}$ with $\Pr[r^{(k)}=1]=\rho=\rho(w^\star)$, we have
+$\Pr[T=0]=(1-\rho)^K$.
+\end{proof}
+
+\begin{restatable}[High-probability recovery with $K$ samples]{corollary}{RecoverabilityHP}\label{cor:recoverability_hp}
+In the setting of Thm.~\ref{thm:recoverability_poly}, let
+$\rho := \rho(w^\star)=\Pr[M_{g+1}(v)=1]$ and
+$\alpha := \frac{w^\star-(d-1)}{p-(d-1)}\in[0,1)$.
+Fix $\delta\in(0,1)$. For $\alpha\in(0,1)$ define
+\[
+T_0 := \left\lceil \frac{\log\!\big(2(p-(d-1))/\delta\big)}{\log(1/\alpha)} \right\rceil
+\quad
+(\text{and if }\alpha=0,\text{ take }T_0:=1).
+\]
+If $K \ge \frac{1}{\rho}\max\{2T_0,\; 8\log(2/\delta)\}$, then the decoder in \eqref{eq:intersection_decoder}
+outputs $\widehat S=S_{g+1}$ with probability at least $1-\delta$.
+\end{restatable}
+
+\begin{proof}
+Let $T=|K_+|=\sum_{k=1}^K \mathbf{1}\{r^{(k)}=1\}$. Since $r^{(k)}=M_{g+1}\!\big(v^{(k)}\big)$ and the payloads are i.i.d.,
+we have $T\sim \mathrm{Bin}(K,\rho)$.
+
+By Thm.~\ref{thm:recoverability_poly}, for any $t\ge 1$,
+\[
+\Pr[\widehat S\neq S_{g+1}\mid T=t] \;\le\; \big(p-(d-1)\big)\alpha^{t}.
+\]
+Hence
+\[
+\Pr[\widehat S\neq S_{g+1}]
+\;\le\;
+\Pr[T<T_0] \;+\; \Pr[\widehat S\neq S_{g+1}\mid T\ge T_0].
+\]
+
+For the first term, our lower bound on $K$ implies $K\rho/2 \ge T_0$, so by a multiplicative Chernoff bound,
+\[
+\Pr[T<T_0]
+\;\le\;
+\Pr\!\left[T \le \tfrac12 K\rho\right]
+\;\le\;
+\exp\!\left(-\tfrac18 K\rho\right)
+\;\le\;
+\delta/2,
+\]
+where the last inequality uses $K\rho \ge 8\log(2/\delta)$.
+
+For the second term, on $T\ge T_0$ we have
+\[
+\Pr[\widehat S\neq S_{g+1}\mid T\ge T_0]
+\;\le\;
+\big(p-(d-1)\big)\alpha^{T_0}
+\;\le\;
+\delta/2,
+\]
+by the definition of $T_0$ (and trivially if $\alpha=0$). Combining the two bounds yields
+$\Pr[\widehat S\neq S_{g+1}] \le \delta$.
+\end{proof}
+
+Lem.~\ref{lem:bayes_masking} shows a \emph{per-sample} obfuscation property: marginalizing over the unknown prefix supports,
+each labeled example provides only exponentially small Bayes advantage about the next-term signal unless one conditions on the revealed
+prefix. In the ideal balanced case $\rho(w^\star)=1/2$, this advantage is $0$ whenever $m(a)\ge 1$.
+While the trivial leakage case $m(a)=0$ is theoretically possible, its probability $2^{-g}$ becomes exponentially rare as depth increases.
+Lem.~\ref{lem:history_only} rules out history-only shortcuts under the instance distribution, since $S_{g+1}$ remains uniform given the
+revealed prefix.
+
+Finally, Thm.~\ref{thm:recoverability_poly} (and Corollary~\ref{cor:recoverability_hp}) show that a diligent solver can subtract the prefix mask to obtain residual labels $r^{(k)}=M_{g+1}(v^{(k)})$ and recover $t_{g+1}$ in polynomial time from
+$K=O\!\big(\tfrac{1}{\rho(w^\star)}\log(p/\delta)\big)$ samples with failure probability at most $\delta$ (for fixed $d$ and constant $\rho(w^\star)$). Together, these properties justify using $\gamma_g$ in \eqref{eq:gamma_exact} as an operational measure of step success in our benchmark.
+
+{\bf Efficient validation.\enspace} Given the instance specification (in particular $S_{g+1}$) and a candidate monomial $\tilde t$,
+the validator parses $\tilde t$, rejects unless it contains exactly one address variable (which must be $a_{g+1}$) and exactly $d-1$ distinct payload variables, then accepts iff the parsed payload index set $\widetilde S$ equals $S_{g+1}$. This runs in time $O(|\tilde t| + d\log d)$ worst-case (or $O(|\tilde t| + d)$ expected with hashing).
+
+\newpage
+\input{checklist.tex}
+
+
+\end{document}
